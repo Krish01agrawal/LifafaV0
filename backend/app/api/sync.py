@@ -106,6 +106,9 @@ async def sync_gmail_emails(
             {
                 "$set": {
                     "email_count": emails_inserted,
+                    "emails_to_categorize": emails_inserted,
+                    "emails_categorized": 0,
+                    "emails_failed": 0,
                     "last_synced": datetime.utcnow()
                 }
             }
@@ -308,4 +311,92 @@ async def get_quota_info(user_id: str):
         raise
     except Exception as e:
         logger.error(f"Error getting quota info: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get quota info") 
+        raise HTTPException(status_code=500, detail="Failed to get quota info")
+
+@router.post("/categorize/{user_id}")
+async def categorize_existing_emails(user_id: str, background_tasks: BackgroundTasks):
+    """Trigger categorization of existing emails in email_logs."""
+    try:
+        logger.info(f"Starting categorization for user: {user_id}")
+        
+        # Get database
+        db = DatabaseService.get_database()
+        
+        # Find all emails that need processing (pending, unclassified, or classified but not extracted)
+        pending_emails = await db.email_logs.find({
+            "user_id": user_id,
+            "$or": [
+                {"classification_status": {"$in": ["pending", None]}},
+                {"classification_status": {"$exists": False}},
+                {"classification_status": "classified", "email_category": {"$in": ["finance", "travel", "job", "promotion", "subscription", "shopping", "utilities", "insurance", "real_estate", "health", "education", "entertainment"]}}
+            ]
+        }).to_list(length=None)
+        
+        if not pending_emails:
+            return {
+                "user_id": user_id,
+                "status": "no_emails_to_process",
+                "message": "No pending emails found to categorize",
+                "emails_found": 0
+            }
+        
+        # Get email IDs
+        email_ids = [str(email["_id"]) for email in pending_emails]
+        
+        logger.info(f"Found {len(email_ids)} emails to categorize for user {user_id}")
+        
+        # Queue for processing
+        background_tasks.add_task(queue_email_processing, user_id, email_ids)
+        
+        # Update user status
+        await db.users.update_one(
+            {"_id": user_id},
+            {
+                "$set": {
+                    "categorization_status": "in_progress",
+                    "categorization_started_at": datetime.utcnow(),
+                    "emails_to_categorize": len(email_ids)
+                }
+            }
+        )
+        
+        return {
+            "user_id": user_id,
+            "status": "categorization_started",
+            "emails_found": len(email_ids),
+            "message": f"Started categorization of {len(email_ids)} emails",
+            "started_at": datetime.utcnow()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error starting categorization: {e}")
+        raise HTTPException(status_code=500, detail=f"Categorization failed: {str(e)}")
+
+@router.get("/debug/{user_id}")
+async def debug_user_emails(user_id: str):
+    """Debug endpoint to check user's emails."""
+    try:
+        db = DatabaseService.get_database()
+        
+        # Get all emails for this user
+        all_emails = await db.email_logs.find({"user_id": user_id}).to_list(length=5)
+        
+        # Get count
+        total_count = await db.email_logs.count_documents({"user_id": user_id})
+        
+        # Get status breakdown
+        status_breakdown = await db.email_logs.aggregate([
+            {"$match": {"user_id": user_id}},
+            {"$group": {"_id": "$classification_status", "count": {"$sum": 1}}}
+        ]).to_list(length=None)
+        
+        return {
+            "user_id": user_id,
+            "total_emails": total_count,
+            "sample_emails": all_emails,
+            "status_breakdown": status_breakdown
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Debug failed: {str(e)}") 

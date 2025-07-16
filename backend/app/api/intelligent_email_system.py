@@ -48,9 +48,8 @@ from ..intelligent_query_processor import (
     IntelligentQueryProcessor
 )
 from ..mongodb_optimizer import (
-    initialize_mongodb_optimization,
-    get_performance_report,
-    mongodb_optimizer
+    optimize_database_indexes,
+    get_query_performance_stats
 )
 
 # Configure logging
@@ -316,7 +315,7 @@ async def optimize_database_performance(
         logger.info("🔧 Starting database optimization")
         
         # Initialize MongoDB optimization
-        optimization_result = await initialize_mongodb_optimization()
+        optimization_result = await optimize_database_indexes()
         
         if not optimization_result.get("success", False):
             raise HTTPException(status_code=500, detail=optimization_result.get("error", "Optimization failed"))
@@ -350,7 +349,7 @@ async def get_performance_analytics(
         logger.info("📈 Generating performance report")
         
         # Get performance report
-        performance_report = await get_performance_report()
+        performance_report = await get_query_performance_stats()
         
         if "error" in performance_report:
             raise HTTPException(status_code=500, detail=performance_report["error"])
@@ -393,7 +392,7 @@ async def _process_emails_pipeline(
         # Stage 1: Database Optimization (if enabled)
         if enable_optimization:
             logger.info("🔧 Stage 1: Database Optimization")
-            optimization_result = await initialize_mongodb_optimization()
+            optimization_result = await optimize_database_indexes()
             logger.info(f"✅ Database optimization: {optimization_result.get('success', False)}")
         
         # Stage 2: Email Categorization (if enabled)

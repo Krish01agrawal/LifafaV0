@@ -116,34 +116,63 @@ async def sync_gmail_emails(user_id: str, access_token: str):
         gmail_url = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
         headers = {"Authorization": f"Bearer {access_token}"}
         
-        # Get first 100 messages
-        params = {"maxResults": 100}
+        # Get messages with proper limit (up to 20,000) from last 6 months
+        from app.config.constants import DefaultLimits
+        from datetime import datetime, timedelta
         
-        logger.info("Fetching Gmail messages...")
-        response = requests.get(gmail_url, headers=headers, params=params)
+        # Calculate date 6 months ago
+        six_months_ago = datetime.now() - timedelta(days=180)
+        date_query = six_months_ago.strftime("%Y/%m/%d")
         
-        if response.status_code != 200:
-            logger.error(f"Gmail API error: {response.status_code} - {response.text}")
-            await db.users.update_one(
-                {"_id": ObjectId(user_id)},
-                {
-                    "$set": {
-                        "gmail_sync_status": "error",
-                        "sync_error": f"Gmail API error: {response.status_code}",
-                        "updated_at": datetime.utcnow()
+        params = {
+            "maxResults": DefaultLimits.EMAIL_FETCH_LIMIT,
+            "q": f"after:{date_query}"  # Only get emails from last 6 months
+        }
+        
+        logger.info("Fetching Gmail messages with pagination...")
+        
+        all_messages = []
+        page_token = None
+        total_fetched = 0
+        
+        while True:
+            # Add page token if we have one
+            if page_token:
+                params["pageToken"] = page_token
+            
+            response = requests.get(gmail_url, headers=headers, params=params)
+            
+            if response.status_code != 200:
+                logger.error(f"Gmail API error: {response.status_code} - {response.text}")
+                await db.users.update_one(
+                    {"_id": ObjectId(user_id)},
+                    {
+                        "$set": {
+                            "gmail_sync_status": "error",
+                            "sync_error": f"Gmail API error: {response.status_code}",
+                            "updated_at": datetime.utcnow()
+                        }
                     }
-                }
-            )
-            return
+                )
+                return
+            
+            messages_data = response.json()
+            messages = messages_data.get("messages", [])
+            all_messages.extend(messages)
+            total_fetched += len(messages)
+            
+            logger.info(f"Fetched page: {len(messages)} messages (Total: {total_fetched})")
+            
+            # Check if there are more pages
+            page_token = messages_data.get("nextPageToken")
+            if not page_token:
+                break
         
-        messages_data = response.json()
-        messages = messages_data.get("messages", [])
-        
-        logger.info(f"Found {len(messages)} Gmail messages")
+        logger.info(f"Found {len(all_messages)} total Gmail messages across all pages")
         
         # Process each message (simplified - just store basic info)
         email_count = 0
-        for message in messages:
+        for message in all_messages:
             try:
                 # Get message details
                 message_url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message['id']}"
@@ -172,8 +201,8 @@ async def sync_gmail_emails(user_id: str, access_token: str):
                     
                     email_count += 1
                     
-                    if email_count % 10 == 0:
-                        logger.info(f"Processed {email_count} emails...")
+                    if email_count % 50 == 0:
+                        logger.info(f"Processed {email_count}/{len(all_messages)} emails... ({email_count/len(all_messages)*100:.1f}%)")
                 
             except Exception as msg_error:
                 logger.error(f"Error processing message {message['id']}: {msg_error}")
@@ -193,7 +222,50 @@ async def sync_gmail_emails(user_id: str, access_token: str):
             }
         )
         
-        logger.info(f"Gmail sync completed successfully. Processed {email_count} emails")
+        logger.info(f"Gmail sync completed successfully. Processed {email_count}/{len(all_messages)} emails")
+        logger.info(f"Success rate: {email_count/len(all_messages)*100:.1f}%")
+        
+        # Automatically trigger categorization after successful sync
+        if email_count > 0:
+            logger.info("="*50)
+            logger.info("AUTOMATICALLY TRIGGERING EMAIL CATEGORIZATION")
+            logger.info("="*50)
+            
+            try:
+                from app.workers.email_worker import queue_email_processing
+                
+                # Find all pending emails for this user
+                pending_emails = await db.email_logs.find({
+                    "user_id": user_id,
+                    "classification_status": {"$in": ["pending", None]}
+                }).to_list(length=None)
+                
+                if pending_emails:
+                    email_ids = [str(email["_id"]) for email in pending_emails]
+                    logger.info(f"Found {len(email_ids)} emails to categorize automatically")
+                    
+                    # Queue for processing
+                    await queue_email_processing(user_id, email_ids)
+                    
+                    # Update user status to indicate categorization is running
+                    await db.users.update_one(
+                        {"_id": ObjectId(user_id)},
+                        {
+                            "$set": {
+                                "categorization_status": "in_progress",
+                                "categorization_started_at": datetime.utcnow(),
+                                "emails_to_categorize": len(email_ids)
+                            }
+                        }
+                    )
+                    
+                    logger.info(f"Automatic categorization started for {len(email_ids)} emails")
+                else:
+                    logger.info("No pending emails found for categorization")
+                    
+            except Exception as cat_error:
+                logger.error(f"Error starting automatic categorization: {cat_error}")
+        
         logger.info("="*50)
         
     except Exception as e:

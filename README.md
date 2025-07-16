@@ -1,4 +1,4 @@
-# 🚀 Gmail Intelligence Platform
+# 🚀 LifafaV0 - Gmail Intelligence Platform
 
 > **Complete Financial Intelligence & AI Platform** - Transform your Gmail into a powerful financial analysis tool with AI-powered insights, credit monitoring, and automated financial services.
 
@@ -8,7 +8,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg?style=flat&logo=docker)](https://docker.com)
 [![AI](https://img.shields.io/badge/AI-OpenAI%20%7C%20Mem0-orange.svg?style=flat)](https://openai.com)
 
-## ✨ What is Gmail Intelligence?
+## ✨ What is LifafaV0?
 
 A comprehensive platform that analyzes your Gmail emails to provide:
 - 🧠 **AI-Powered Email Intelligence** - Smart categorization and insights from your email data
@@ -22,19 +22,22 @@ A comprehensive platform that analyzes your Gmail emails to provide:
 ## 🏗️ Architecture Overview
 
 ```
-📁 Gmail Intelligence Platform
+📁 LifafaV0 - Gmail Intelligence Platform
 ├── 🖥️  backend/          # FastAPI backend with 160+ dependencies
 │   ├── app/
 │   │   ├── config/       # Pydantic settings & database config
 │   │   ├── core/         # Security, middleware, dependencies
 │   │   ├── models/       # Typed data models (auth, gmail, financial, credit)
 │   │   ├── services/     # Business logic layer
+│   │   ├── api/          # REST API endpoints
+│   │   ├── workers/      # Background task processing
 │   │   └── *.py          # Feature modules (credit, statements, automation)
 │   └── requirements.txt  # Complete dependency list
 ├── 🌐 frontend/          # Web interface
 ├── 🐳 Dockerfile         # Production container
-├── 📋 .env               # Environment configuration
-└── 🚀 deploy_production.sh # Deployment script
+├── 📋 docker-compose.yml # Multi-service orchestration
+├── 🔧 Makefile          # Development and deployment commands
+└── 📚 Documentation/     # System design and API guides
 ```
 
 ### Technology Stack
@@ -45,7 +48,7 @@ A comprehensive platform that analyzes your Gmail emails to provide:
 - **Real-time**: WebSocket connections with progress tracking
 - **Performance**: Smart caching, batch processing, rate limiting
 
-## 🚀 Quick Start with Docker
+## 🚀 Quick Start
 
 ### 1. Prerequisites
 ```bash
@@ -61,7 +64,7 @@ A comprehensive platform that analyzes your Gmail emails to provide:
 ```bash
 # Clone and setup
 git clone <your-repo>
-cd GmailChatbot.V1.1
+cd LifafaV0
 
 # Quick setup with Makefile
 make env  # Creates .env from template
@@ -98,8 +101,8 @@ make build    # Build Docker image
 make run      # Start all services (backend + MongoDB + Redis)
 
 # Or manual Docker commands
-docker build -t gmail-intelligence:latest .
-docker run -p 8000:8000 --env-file .env gmail-intelligence:latest
+docker build -t lifafa-v0:latest .
+docker run -p 8000:8000 --env-file .env lifafa-v0:latest
 
 # Or use Docker Compose (includes MongoDB + Redis)
 docker-compose up -d
@@ -108,7 +111,7 @@ docker-compose up -d
 docker run -p 8000:8000 --env-file .env \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/logs:/app/logs \
-  gmail-intelligence:latest
+  lifafa-v0:latest
 ```
 
 **Development vs Production:**
@@ -267,12 +270,12 @@ sudo systemctl start mongod  # Ubuntu
 ### Option 1: Docker (Recommended)
 ```bash
 # Production deployment
-docker build -t gmail-intelligence:latest .
-docker run -d --name gmail-intelligence \
+docker build -t lifafa-v0:latest .
+docker run -d --name lifafa-v0 \
   -p 8000:8000 \
   --env-file .env \
   --restart unless-stopped \
-  gmail-intelligence:latest
+  lifafa-v0:latest
 ```
 
 ### Option 2: Traditional Deployment
@@ -335,6 +338,7 @@ curl http://localhost:8000/financial/health
 - 🏗️ **[Installation Guide](backend/INSTALLATION_GUIDE.md)** - Step-by-step setup
 - 💳 **[Credit Bureau Setup](backend/CREDIT_BUREAU_API_SETUP.md)** - Credit API configuration
 - 📊 **[Financial API Guide](backend/FINANCIAL_API_ENDPOINTS.md)** - Advanced features
+- 🎨 **[System Design](COMPLETE_VISUAL_SYSTEM_DESIGN.md)** - Complete architecture overview
 
 ### API Documentation
 ```bash
@@ -413,13 +417,35 @@ docker run -p 8001:8000 ...  # Use different port
 - 🏪 Merchant recognition improvements
 - 🌍 Multi-language support
 
+## 🤝 Contributing
+
+We welcome contributions! Please see our contributing guidelines:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- OpenAI for GPT-4 API
+- Mem0 for memory services
+- FastAPI for the excellent web framework
+- MongoDB for the database
+- Google for Gmail API
+
 ---
 
 ## 🎉 Ready to Start?
 
 ### Quick 3-Step Setup:
 1. **Configure**: Copy `.env` and add your API keys
-2. **Deploy**: `docker build -t gmail-intelligence . && docker run -p 8000:8000 --env-file .env gmail-intelligence`
+2. **Deploy**: `docker build -t lifafa-v0 . && docker run -p 8000:8000 --env-file .env lifafa-v0`
 3. **Access**: Open `http://localhost:8000/docs` and start exploring!
 
 ### Need Help?

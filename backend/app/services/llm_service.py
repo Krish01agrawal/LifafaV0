@@ -19,20 +19,43 @@ class LLMService:
     async def classify_email(self, email_subject: str, email_body: str) -> str:
         """Classify email into categories."""
         try:
+            # Decode base64 if needed
+            import base64
+            if email_body and email_body.startswith('data:'):
+                try:
+                    email_body = email_body.split(',', 1)[1]
+                    email_body = base64.b64decode(email_body).decode('utf-8')
+                except:
+                    pass
+            
             prompt = f"""
-You are an email classifier. Categorize the following email into one of these categories:
+You are an email classifier. Categorize the following email into one of these detailed categories:
 
 Categories:
-- finance: Bills, payments, transactions, banking
-- travel: Flights, hotels, bookings, transportation
-- job: Job applications, interviews, work communications
-- promotion: Offers, discounts, marketing emails
-- subscription: Service subscriptions, renewals
-- other: Everything else
+- finance: Bills, payments, transactions, banking, credit cards, loans, investments, UPI transactions, bank alerts
+- travel: Flights, hotels, bookings, transportation, vacation packages, travel insurance, car rentals
+- job: Job applications, interviews, work communications, career opportunities, recruitment, HR updates
+- promotion: Offers, discounts, marketing emails, sales, deals, coupons, cashback, referral programs
+- subscription: Service subscriptions, renewals, memberships, streaming services, software licenses, cloud services
+- shopping: Online purchases, order confirmations, delivery updates, e-commerce, retail, marketplace
+- social: Social media notifications, friend requests, community updates, Reddit, LinkedIn, Facebook
+- health: Medical appointments, health insurance, fitness, wellness, pharmacy, healthcare services
+- education: Course enrollments, academic updates, learning platforms, online courses, certifications
+- entertainment: Movie tickets, event bookings, gaming, streaming, concerts, shows, sports
+- utilities: Electricity, water, gas, internet, phone bills, municipal services, broadband
+- insurance: Policy updates, claims, coverage information, health insurance, car insurance, life insurance
+- real_estate: Property listings, rent payments, mortgage updates, real estate services, property management
+- food: Food delivery, restaurant bookings, grocery orders, meal plans, food subscriptions
+- transport: Ride-sharing, public transport, fuel, parking, vehicle services, logistics
+- technology: Software updates, tech support, IT services, cybersecurity, digital services
+- finance_investment: Investment updates, stock alerts, mutual funds, trading, financial planning
+- government: Government services, tax updates, official communications, public services
+- charity: Donations, fundraising, NGO updates, social causes, volunteer opportunities
+- other: Everything else not covered above
 
 Email:
 Subject: {email_subject}
-Body: {email_body[:1000]}  # Limit body length
+Body: {email_body[:2000]}  # Increased limit for better classification
 
 Return only the category name.
 """
@@ -55,30 +78,39 @@ Return only the category name.
     async def extract_financial_data(self, email_subject: str, email_body: str) -> Dict[str, Any]:
         """Extract financial transaction data from email."""
         try:
+            # Decode base64 if needed
+            import base64
+            if email_body and email_body.startswith('data:'):
+                try:
+                    email_body = email_body.split(',', 1)[1]
+                    email_body = base64.b64decode(email_body).decode('utf-8')
+                except:
+                    pass
+            
             prompt = f"""
-You are a financial data extractor. Extract structured data from this email:
+You are a financial data extractor. Extract detailed transaction data from this email:
 
 Email:
 Subject: {email_subject}
-Body: {email_body}
+Body: {email_body[:3000]}  # Increased limit for better extraction
 
-Return JSON in this exact format:
+Return JSON in this exact format with detailed UPI and bank information:
 {{
-  "transaction_type": "payment|bill|subscription|income|refund|fee|transfer",
+  "transaction_type": "payment|bill|subscription|income|refund|fee|transfer|debit|credit",
   "amount": 599.00,
   "currency": "INR",
   "transaction_date": "2024-03-15",
   "due_date": "2024-03-20",
   "service_period_start": "2024-02-01",
   "service_period_end": "2024-02-28",
-  "merchant_canonical": "Vodafone Idea",
+  "merchant_canonical": "Vodafone Idea Limited",
   "merchant_name": "Vi",
-  "merchant_category": "Telecom",
-  "merchant_patterns": ["Vi*", "*Vodafone*"],
+  "merchant_category": "Telecom|Utilities|OTT|Banking|E-commerce|Education|Entertainment|Food|Transport|Healthcare",
+  "merchant_patterns": ["Vi*", "*Vodafone*", "*Idea*"],
   "service_name": "Postpaid Plan",
   "service_category": "Telecom",
-  "payment_status": "completed",
-  "payment_method": "upi",
+  "payment_status": "completed|pending|failed|partial|disputed|cancelled",
+  "payment_method": "upi|credit_card|debit_card|net_banking|wallet|cash",
   "invoice_number": "INV-2024-12345",
   "transaction_reference": "TXN123456",
   "is_automatic_payment": true,
@@ -93,12 +125,39 @@ Return JSON in this exact format:
   "billing_period_end": "2024-02-28",
   "account_number": "XXXXXXXXXX",
   "service_provider": "Vodafone Idea",
-  "subscription_frequency": "monthly",
+  "subscription_frequency": "monthly|weekly|yearly|one_time",
   "next_renewal_date": "2024-04-15",
+  "is_subscription": true,
+  "subscription_product": "Vodafone Postpaid",
+  "confidence_score": 0.97,
+  "bank_details": {{
+    "bank_name": "HDFC Bank",
+    "account_number": "XXXX8121"
+  }},
+  "upi_details": {{
+    "transaction_flow": {{
+      "direction": "outgoing|incoming",
+      "description": "Money sent from your account"
+    }},
+    "receiver": {{
+      "upi_id": "vodafone.rzp@hdfcbank",
+      "name": "Vodafone Idea",
+      "upi_app": "HDFC Bank UPI"
+    }}
+  }},
+  "card_details": {{}},
+  "subscription_details": {{
+    "is_subscription": true,
+    "product_name": "Vodafone Postpaid",
+    "category": "Telecom",
+    "type": "Mobile Service",
+    "confidence_score": 0.8,
+    "detection_reasons": ["Subscription keyword: postpaid", "Product keyword: vodafone"]
+  }},
   "extraction_confidence": 0.97
 }}
 
-Only return valid JSON. If information is missing, use null or empty values.
+Extract ALL possible details from the email. If information is missing, use null or empty values.
 """
             
             response = await self.client.chat.completions.create(
@@ -256,36 +315,41 @@ Only return valid JSON. If information is missing, use null or empty values.
         """Extract promotional data from email."""
         try:
             prompt = f"""
-You are a promotional data extractor. Extract structured data from this email:
+You are a promotional data extractor. Extract detailed promotional data from this email:
 
 Email:
 Subject: {email_subject}
-Body: {email_body}
+Body: {email_body[:3000]}  # Increased limit for better extraction
 
-Return JSON in this exact format:
+Return JSON in this exact format with detailed merchant and offer information:
 {{
-  "promotion_type": "discount|offer|sale|coupon|cashback|referral",
+  "promotion_type": "discount|offer|sale|coupon|cashback|referral|free_trial|upgrade|membership",
   "discount_amount": 200.00,
   "discount_percentage": 20.0,
   "original_price": 1000.00,
   "discounted_price": 800.00,
-  "currency": "INR",
-  "merchant_canonical": "Amazon India",
+  "currency": "INR|USD|EUR",
+  "merchant_canonical": "Amazon India Private Limited",
   "merchant_name": "Amazon",
-  "merchant_category": "E-commerce",
-  "offer_category": "Electronics",
+  "merchant_category": "E-commerce|Electronics|Fashion|Food|Travel|Entertainment|Education|Healthcare|Finance",
+  "offer_category": "Electronics|Fashion|Home|Beauty|Sports|Books|Automotive|Baby|Pet|Garden",
   "promotion_code": "SAVE20",
   "valid_from": "2024-03-15",
   "valid_until": "2024-03-20",
   "minimum_purchase": 500.00,
   "maximum_discount": 500.00,
-  "terms_conditions": "Valid on selected items only",
+  "terms_conditions": "Valid on selected items only. Cannot be combined with other offers.",
   "is_expired": false,
   "is_used": false,
+  "offer_highlights": ["Free delivery", "No cost EMI", "Instant discount"],
+  "target_audience": "new_customers|existing_customers|all_customers|premium_members",
+  "exclusions": ["Gift cards", "Digital content"],
+  "delivery_info": "Free delivery on orders above ₹499",
+  "payment_options": ["Credit Card", "UPI", "Net Banking"],
   "extraction_confidence": 0.94
 }}
 
-Only return valid JSON. If information is missing, use null or empty values.
+Extract ALL possible promotional details from the email. If information is missing, use null or empty values.
 """
             
             response = await self.client.chat.completions.create(
@@ -308,6 +372,88 @@ Only return valid JSON. If information is missing, use null or empty values.
             
         except Exception as e:
             logger.error(f"Error extracting promotional data: {e}")
+            raise
+    
+    async def extract_subscription_data(self, email_subject: str, email_body: str) -> Dict[str, Any]:
+        """Extract subscription data from email."""
+        try:
+            # Decode base64 if needed
+            import base64
+            if email_body and email_body.startswith('data:'):
+                try:
+                    email_body = email_body.split(',', 1)[1]
+                    email_body = base64.b64decode(email_body).decode('utf-8')
+                except:
+                    pass
+            
+            prompt = f"""
+You are a subscription data extractor. Extract detailed subscription data from this email:
+
+Email:
+Subject: {email_subject}
+Body: {email_body[:3000]}  # Increased limit for better extraction
+
+Return JSON in this exact format with detailed subscription information:
+{{
+  "subscription_type": "streaming|software|service|membership|newsletter|platform|cloud|gaming|fitness|education|music|news|food|transport|healthcare|finance",
+  "service_name": "Netflix",
+  "service_canonical": "Netflix Inc",
+  "service_category": "Entertainment|Productivity|Communication|Education|Health|Finance|Food|Transport|Shopping|Gaming|Music|News|Fitness|Cloud",
+  "plan_name": "Premium Plan",
+  "plan_features": ["4K streaming", "4 screens", "Downloads", "Ad-free"],
+  "billing_frequency": "monthly|weekly|yearly|quarterly|one_time",
+  "amount": 799.00,
+  "currency": "INR|USD|EUR",
+  "billing_date": "2024-03-15",
+  "next_billing_date": "2024-04-15",
+  "subscription_status": "active|inactive|cancelled|suspended|trial",
+  "auto_renewal": true,
+  "trial_end_date": null,
+  "cancellation_date": null,
+  "account_email": "user@example.com",
+  "subscription_id": "sub_123456789",
+  "payment_method": "credit_card|debit_card|upi|net_banking|wallet",
+  "requires_action": false,
+  "plan_details": {{
+    "duration": "1 month",
+    "price_per_month": 799.00,
+    "annual_savings": 0.00,
+    "features_count": 4
+  }},
+  "usage_limits": {{
+    "screens": 4,
+    "quality": "4K",
+    "downloads": "Unlimited"
+  }},
+  "cancellation_policy": "Cancel anytime",
+  "refund_policy": "No refunds for partial months",
+  "support_contact": "support@netflix.com",
+  "extraction_confidence": 0.95
+}}
+
+Extract ALL possible subscription details from the email. If information is missing, use null or empty values.
+"""
+            
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=self.max_tokens,
+                temperature=self.temperature
+            )
+            
+            content = response.choices[0].message.content.strip()
+            
+            # Extract JSON from response
+            start_idx = content.find('{')
+            end_idx = content.rfind('}') + 1
+            json_str = content[start_idx:end_idx]
+            
+            data = json.loads(json_str)
+            logger.info(f"Subscription data extracted successfully")
+            return data
+            
+        except Exception as e:
+            logger.error(f"Error extracting subscription data: {e}")
             raise
     
     async def understand_query_intent(self, query: str) -> Dict[str, Any]:

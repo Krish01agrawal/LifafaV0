@@ -63,6 +63,9 @@ class EmailWorker:
             # Update cache with progress
             await self._update_progress_cache(user_id, success_count, failure_count)
             
+            # Update user categorization status
+            await self._update_user_categorization_status(user_id)
+            
         except Exception as e:
             logger.error(f"Error in batch processing: {e}")
             raise
@@ -170,6 +173,14 @@ class EmailWorker:
                         }
                     }
                 )
+                
+                # Update user failure count
+                await self._get_db().users.update_one(
+                    {"_id": user_id},
+                    {
+                        "$inc": {"emails_failed": 1}
+                    }
+                )
             except:
                 pass
             
@@ -178,8 +189,57 @@ class EmailWorker:
     async def _classify_email(self, email: Dict[str, Any]) -> str:
         """Classify email into categories using LLM."""
         try:
-            subject = email.get("email_subject", "")
-            body = email.get("email_body", "")
+            # Extract subject and body from raw Gmail data
+            raw_data = email.get("raw_data", {})
+            
+            # Find subject from headers
+            subject = ""
+            body = email.get("snippet", "")
+            
+            # Try to get headers from payload
+            if raw_data and "payload" in raw_data:
+                headers = raw_data["payload"].get("headers", [])
+                for header in headers:
+                    if header.get("name", "").lower() == "subject":
+                        subject = header.get("value", "")
+                        break
+                
+                # Try to get body from payload parts
+                if "parts" in raw_data["payload"]:
+                    for part in raw_data["payload"]["parts"]:
+                        if part.get("mimeType") == "text/plain":
+                            encoded_body = part.get("body", {}).get("data", "")
+                            if encoded_body:
+                                try:
+                                    import base64
+                                    body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
+                                except:
+                                    body = encoded_body
+                            break
+                        elif part.get("mimeType") == "text/html":
+                            encoded_body = part.get("body", {}).get("data", "")
+                            if encoded_body:
+                                try:
+                                    import base64
+                                    body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
+                                except:
+                                    body = encoded_body
+                            break
+                else:
+                    # Try to get body from payload body directly
+                    encoded_body = raw_data["payload"].get("body", {}).get("data", "")
+                    if encoded_body:
+                        try:
+                            import base64
+                            body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
+                        except:
+                            body = encoded_body
+            
+            # If no body found, use snippet
+            if not body:
+                body = email.get("snippet", "")
+            
+            logger.info(f"Classifying email - Subject: {subject[:50]}..., Body: {body[:100]}...")
             
             # Use LLM to classify
             category = await llm_service.classify_email(subject, body)
@@ -193,8 +253,57 @@ class EmailWorker:
     async def _extract_structured_data(self, email: Dict[str, Any], category: str) -> Dict[str, Any]:
         """Extract structured data based on email category."""
         try:
-            subject = email.get("email_subject", "")
-            body = email.get("email_body", "")
+            # Extract subject and body from raw Gmail data
+            raw_data = email.get("raw_data", {})
+            
+            # Find subject from headers
+            subject = ""
+            body = email.get("snippet", "")
+            
+            # Try to get headers from payload
+            if raw_data and "payload" in raw_data:
+                headers = raw_data["payload"].get("headers", [])
+                for header in headers:
+                    if header.get("name", "").lower() == "subject":
+                        subject = header.get("value", "")
+                        break
+                
+                # Try to get body from payload parts
+                if "parts" in raw_data["payload"]:
+                    for part in raw_data["payload"]["parts"]:
+                        if part.get("mimeType") == "text/plain":
+                            encoded_body = part.get("body", {}).get("data", "")
+                            if encoded_body:
+                                try:
+                                    import base64
+                                    body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
+                                except:
+                                    body = encoded_body
+                            break
+                        elif part.get("mimeType") == "text/html":
+                            encoded_body = part.get("body", {}).get("data", "")
+                            if encoded_body:
+                                try:
+                                    import base64
+                                    body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
+                                except:
+                                    body = encoded_body
+                            break
+                else:
+                    # Try to get body from payload body directly
+                    encoded_body = raw_data["payload"].get("body", {}).get("data", "")
+                    if encoded_body:
+                        try:
+                            import base64
+                            body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
+                        except:
+                            body = encoded_body
+            
+            # If no body found, use snippet
+            if not body:
+                body = email.get("snippet", "")
+            
+            logger.info(f"Extracting {category} data - Subject: {subject[:50]}..., Body: {body[:100]}...")
             
             if category == "finance":
                 return await llm_service.extract_financial_data(subject, body)
@@ -204,6 +313,12 @@ class EmailWorker:
                 return await llm_service.extract_job_data(subject, body)
             elif category == "promotion":
                 return await llm_service.extract_promotional_data(subject, body)
+            elif category == "subscription":
+                return await llm_service.extract_subscription_data(subject, body)
+            elif category in ["shopping", "food", "transport", "technology", "finance_investment"]:
+                return await llm_service.extract_financial_data(subject, body)  # Use financial extraction for these
+            elif category in ["utilities", "insurance", "real_estate", "health", "education", "entertainment"]:
+                return await llm_service.extract_financial_data(subject, body)  # Use financial extraction for these
             else:
                 return {}
                 
@@ -229,6 +344,20 @@ class EmailWorker:
                 await self._get_db().job_communications.insert_one(data)
             elif category == "promotion":
                 await self._get_db().promotional_emails.insert_one(data)
+            elif category == "subscription":
+                await self._get_db().subscriptions.insert_one(data)
+            elif category in ["shopping", "food", "transport", "technology", "finance_investment", "utilities", "insurance", "real_estate", "health", "education", "entertainment"]:
+                # Store financial-like data in financial_transactions
+                await self._get_db().financial_transactions.insert_one(data)
+            
+            # Update user progress
+            await self._get_db().users.update_one(
+                {"_id": user_id},
+                {
+                    "$inc": {"emails_categorized": 1},
+                    "$set": {"categorization_status": "in_progress"}
+                }
+            )
             
             logger.debug(f"Stored {category} data for email {email_id}")
             
@@ -251,6 +380,49 @@ class EmailWorker:
                 
         except Exception as e:
             logger.error(f"Error updating progress cache: {e}")
+    
+    async def _update_user_categorization_status(self, user_id: str):
+        """Update user's categorization status based on email processing results."""
+        try:
+            from bson import ObjectId
+            
+            # Get processing statistics
+            total_emails = await self._get_db().email_logs.count_documents({"user_id": user_id})
+            processed_emails = await self._get_db().email_logs.count_documents({
+                "user_id": user_id,
+                "classification_status": {"$in": ["classified", "extracted"]}
+            })
+            failed_emails = await self._get_db().email_logs.count_documents({
+                "user_id": user_id,
+                "classification_status": "failed"
+            })
+            
+            # Determine categorization status
+            if processed_emails == total_emails and total_emails > 0:
+                categorization_status = "completed"
+            elif processed_emails > 0 or failed_emails > 0:
+                categorization_status = "in_progress"
+            else:
+                categorization_status = "not_started"
+            
+            # Update user status
+            await self._get_db().users.update_one(
+                {"_id": ObjectId(user_id)},
+                {
+                    "$set": {
+                        "categorization_status": categorization_status,
+                        "emails_categorized": processed_emails,
+                        "emails_failed": failed_emails,
+                        "categorization_completed_at": datetime.utcnow() if categorization_status == "completed" else None,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+            
+            logger.info(f"Updated user {user_id} categorization status to: {categorization_status} ({processed_emails}/{total_emails} processed)")
+            
+        except Exception as e:
+            logger.error(f"Error updating user categorization status: {e}")
 
 # Global worker instance
 email_worker = EmailWorker()

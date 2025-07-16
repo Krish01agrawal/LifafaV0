@@ -158,8 +158,12 @@ async def get_current_user_info(request: Request):
             "name": user["name"],
             "picture": user.get("picture"),
             "gmail_sync_status": user.get("gmail_sync_status", "not_synced"),
+            "categorization_status": user.get("categorization_status", "not_started"),
             "last_synced": user.get("last_synced"),
             "email_count": user.get("email_count", 0),
+            "emails_to_categorize": user.get("emails_to_categorize", 0),
+            "emails_categorized": user.get("emails_categorized", 0),
+            "emails_failed": user.get("emails_failed", 0),
             "created_at": user["created_at"],
             "last_login": user.get("last_login")
         }

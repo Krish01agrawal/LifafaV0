@@ -216,25 +216,18 @@ async def get_database():
 # DATA COMPRESSION UTILITIES
 # ============================================================================
 
-# Import the intelligent compressor
-from .intelligent_compressor import intelligent_compressor
-
 class SmartCompressor:
-    """Smart compression wrapper that uses intelligent compression"""
+    """Smart compression wrapper with fallback compression"""
     
     @staticmethod
     def compress_email_content(content: str) -> str:
-        """Compress email content using intelligent compression"""
+        """Compress email content using simple compression"""
         if not content or len(content) < 50:
             return content
         
-        # Create email-like data structure for intelligent compression
-        email_data = {'body': content, 'snippet': content[:200]}
-        
-        # Use intelligent compression
-        compressed = intelligent_compressor.compress_email_intelligently(email_data)
-        
-        return compressed.get('body', content)
+        # Simple compression - just return the content for now
+        # Can be enhanced later if needed
+        return content
     
     @staticmethod
     def decompress_email_content(content: str) -> str:
@@ -256,30 +249,23 @@ class SmartCompressor:
     
     @staticmethod
     def minimize_email_data(email_data: Dict) -> Dict:
-        """Intelligently minimize email data while preserving important information"""
+        """Minimize email data while preserving important information"""
         try:
-            # Use intelligent compression
-            compressed = intelligent_compressor.compress_email_intelligently(email_data)
-            
-            # Ensure essential fields are preserved
+            # Simple minimization - preserve essential fields
             minimized = {}
             for field in ESSENTIAL_EMAIL_FIELDS:
-                if field in compressed:
-                    minimized[field] = compressed[field]
+                if field in email_data:
+                    minimized[field] = email_data[field]
             
             # Add compression metadata
-            minimized['compressed'] = True
-            minimized['compression_version'] = 2  # Updated version
-            minimized['compression_type'] = compressed.get('compression_type', 'intelligent')
-            
-            # Add structured data if available
-            if 'structured_data' in compressed:
-                minimized['structured_data'] = compressed['structured_data']
+            minimized['compressed'] = False
+            minimized['compression_version'] = 1
+            minimized['compression_type'] = 'simple'
             
             return minimized
             
         except Exception as e:
-            logger.error(f"Intelligent compression error: {e}")
+            logger.error(f"Compression error: {e}")
             # Fallback to basic compression
             return {
                 field: email_data.get(field)
@@ -843,15 +829,9 @@ async def insert_filtered_emails(user_id: str, emails_data: List[Dict], processi
         if ENABLE_SMART_EMAIL_FILTERING:
             logger.info(f"🎯 [{processing_type.upper()}] Applying advanced two-stage email filtering for user {user_id}")
             
-            # Use advanced two-stage filter
-            from .advanced_email_filter import advanced_filter
-            filtered_emails = await advanced_filter.two_stage_filter_emails(emails_data, user_id, processing_type)
-            
-            # Get detailed stats
-            filter_stats = advanced_filter.get_filtering_stats()
-            logger.info(f"🎯 [{processing_type.upper()}] Advanced filtering result: {len(filtered_emails)}/{len(emails_data)} emails kept")
-            logger.info(f"📊 [{processing_type.upper()}] Stage 1 filtered: {filter_stats['stage1_filtered']}, Stage 2 filtered: {filter_stats['stage2_filtered']}")
-            logger.info(f"📰 [{processing_type.upper()}] Newsletters filtered: {filter_stats['newsletters_filtered']}, Promotional articles: {filter_stats['promotional_articles_filtered']}")
+            # Use simple filtering (advanced filter removed)
+            filtered_emails = emails_data
+            logger.info(f"🎯 [{processing_type.upper()}] Simple filtering: keeping all {len(filtered_emails)} emails")
         else:
             logger.info(f"⚠️ [{processing_type.upper()}] Advanced filtering disabled - keeping all emails")
             filtered_emails = emails_data
@@ -1053,8 +1033,8 @@ async def insert_filtered_emails(user_id: str, emails_data: List[Dict], processi
         
         # Get filtering statistics - use advanced filter stats if available
         if ENABLE_SMART_EMAIL_FILTERING:
-            from .advanced_email_filter import advanced_filter
-            filter_stats = advanced_filter.get_filtering_stats()
+            # Advanced filtering disabled - use basic stats
+            filter_stats = {"stage1_filtered": 0, "stage2_filtered": 0, "newsletters_filtered": 0, "promotional_articles_filtered": 0, "preserved_for_safety": len(emails_data), "preservation_rate": 100}
             
             logger.info(f"✅ Email processing complete for user {user_id}:")
             logger.info(f"   📊 Original emails: {len(emails_data)}")
@@ -1065,13 +1045,9 @@ async def insert_filtered_emails(user_id: str, emails_data: List[Dict], processi
             logger.info(f"   🆔 Missing IDs fixed: {emails_without_ids}")
             logger.info(f"   📊 Total emails in DB: {total_emails_now}")
             logger.info(f"   ❌ Failed operations: {failed_operations}")
-            logger.info(f"   🎯 Advanced Filtering Results:")
-            logger.info(f"     📊 Stage 1 filtered: {filter_stats['stage1_filtered']}")
-            logger.info(f"     📊 Stage 2 filtered: {filter_stats['stage2_filtered']}")
-            logger.info(f"     📰 Newsletters filtered: {filter_stats['newsletters_filtered']}")
-            logger.info(f"     📄 Promotional articles filtered: {filter_stats['promotional_articles_filtered']}")
-            logger.info(f"     🛡️ Preserved for safety: {filter_stats['preserved_for_safety']}")
-            logger.info(f"     📈 Overall preservation rate: {filter_stats['preservation_rate']}%")
+            logger.info(f"   🎯 Simple Filtering Results:")
+            logger.info(f"     📊 All emails preserved: {len(emails_data)}")
+            logger.info(f"     📈 Preservation rate: 100%")
         else:
             # Fallback to basic filter stats
             filter_stats = email_filter.get_filter_stats()
@@ -1097,28 +1073,36 @@ async def insert_filtered_emails(user_id: str, emails_data: List[Dict], processi
             logger.error(f"   🆔 Emails without IDs: {emails_without_ids}")
             logger.error(f"   💾 Bulk operations failed: {failed_operations}")
         
-        # Return comprehensive stats including advanced filtering
+        # Return comprehensive stats including simple filtering
         if ENABLE_SMART_EMAIL_FILTERING:
-            from .advanced_email_filter import advanced_filter
-            advanced_stats = advanced_filter.get_filtering_stats()
+            # Advanced filtering disabled - use simple stats
+            simple_stats = {
+                "total_filtered": 0,
+                "stage1_filtered": 0,
+                "stage2_filtered": 0,
+                "newsletters_filtered": 0,
+                "promotional_articles_filtered": 0,
+                "preserved_for_safety": len(emails_data),
+                "preservation_rate": 100
+            }
             
             return {
                 "success": True,
                 "inserted": total_successful,  # Total of inserted + upserted
-                "filtered": advanced_stats.get("total_filtered", 0),
-                "stage1_filtered": advanced_stats.get("stage1_filtered", 0),
-                "stage2_filtered": advanced_stats.get("stage2_filtered", 0),
-                "newsletters_filtered": advanced_stats.get("newsletters_filtered", 0),
-                "promotional_articles_filtered": advanced_stats.get("promotional_articles_filtered", 0),
-                "preserved_for_safety": advanced_stats.get("preserved_for_safety", 0),
-                "preservation_rate": advanced_stats.get("preservation_rate", 0),
+                "filtered": simple_stats.get("total_filtered", 0),
+                "stage1_filtered": simple_stats.get("stage1_filtered", 0),
+                "stage2_filtered": simple_stats.get("stage2_filtered", 0),
+                "newsletters_filtered": simple_stats.get("newsletters_filtered", 0),
+                "promotional_articles_filtered": simple_stats.get("promotional_articles_filtered", 0),
+                "preserved_for_safety": simple_stats.get("preserved_for_safety", 0),
+                "preservation_rate": simple_stats.get("preservation_rate", 0),
                 "duplicates_skipped": duplicates_skipped,
                 "emails_without_ids": emails_without_ids,
                 "failed_operations": failed_operations,
-                "filter_stats": advanced_stats,
+                "filter_stats": simple_stats,
                 "original_count": len(emails_data),
                 "total_emails_in_db": total_emails_now,
-                "filtering_type": "advanced_two_stage"
+                "filtering_type": "simple"
             }
         else:
             return {
