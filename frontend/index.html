@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>GenAI Gmail Chat</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    body { 
+      font-family: Arial, sans-serif; 
+      padding: 20px; 
+      max-width: 600px; 
+      margin: auto; 
+      background-color: #f5f5f5;
+    }
+    
+    .container {
+      background-color: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    h1 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .auth-section {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .login-btn {
+      background-color: #4285f4;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      transition: background-color 0.3s;
+    }
+    
+    .login-btn:hover {
+      background-color: #3367d6;
+    }
+    
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+      text-align: center;
+    }
+    
+    .status.success {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    
+    .status.error {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    
+    .status.info {
+      background-color: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+    
+    .chat-section {
+      display: none;
+    }
+    
+    .chat-section.active {
+      display: block;
+    }
+    
+    #chat { 
+      border: 1px solid #ddd; 
+      height: 350px; 
+      overflow-y: auto; 
+      padding: 15px; 
+      margin: 20px 0;
+      background-color: #fafafa;
+      border-radius: 5px;
+    }
+    
+    .message {
+      margin: 10px 0;
+      padding: 8px;
+      border-radius: 5px;
+    }
+    
+    .user-message {
+      background-color: #e3f2fd;
+      text-align: right;
+    }
+    
+    .bot-message {
+      background-color: #f1f1f1;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    
+    .system-message {
+      background-color: #fff3cd;
+      color: #856404;
+      text-align: center;
+      font-style: italic;
+    }
+    
+    .input-section {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    
+    #msg { 
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      font-size: 14px;
+    }
+    
+    .send-btn {
+      background-color: #28a745;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    
+    .send-btn:hover {
+      background-color: #218838;
+    }
+    
+    .send-btn:disabled {
+      background-color: #6c757d;
+      cursor: not-allowed;
+    }
+    
+    .user-info {
+      background-color: #e8f5e8;
+      padding: 10px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>🤖 GenAI Gmail Chat</h1>
+
+  <!-- Authentication Section -->
+  <div id="authSection" class="auth-section">
+    <p>Connect your Gmail account to start chatting with your AI assistant about your emails.</p>
+    <a id="loginBtn" href="#" class="login-btn">🔐 Login with Google</a>
+  </div>
+
+  <!-- Status Messages -->
+  <div id="status"></div>
+
+  <!-- User Info (shown after login) -->
+  <div id="userInfo" class="user-info" style="display: none;">
+    <strong>Welcome!</strong> <span id="userEmail"></span>
+    <div id="syncStatus" style="margin: 10px 0; padding: 10px; border-radius: 5px; background: #f8f9fa;">
+      <span id="syncStatusText">Gmail Status: Checking...</span>
+      <button id="syncButton" onclick="startGmailSync()" style="margin-left: 10px; background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">Start Sync</button>
+    </div>
+    <button onclick="logout()" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">Logout</button>
+  </div>
+
+  <!-- Chat Section -->
+  <div id="chatSection" class="chat-section">
+    <div id="chat"></div>
+    
+    <div class="input-section">
+      <input id="msg" type="text" placeholder="Ask me about your emails..." />
+      <button id="sendBtn" class="send-btn" onclick="sendMessage()" disabled>Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ========== Configuration ==========
+  // Auto-detect environment based on current location
+  const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+    ? 'http://localhost:8001'
+    : 'http://ec2-13-127-58-101.ap-south-1.compute.amazonaws.com';
+  
+  console.log(`[Config] Detected environment: ${window.location.hostname}`);
+  console.log(`[Config] Using backend URL: ${BACKEND_URL}`);
+  
+  let jwtToken = null;
+  let ws = null;
+  let currentUser = null;
+  let currentChatId = null;  // Track current chat ID
+
+  // ========== Initialization ==========
+  window.onload = function () {
+    // Set the login URL dynamically
+    document.getElementById('loginBtn').href = `${BACKEND_URL}/auth/login`;
+    
+    checkAuthStatus();
+    setupEventListeners();
+  };
+
+  function setupEventListeners() {
+    // Enter key sends message
+    const msgInput = document.getElementById("msg");
+    if (msgInput) {
+      msgInput.addEventListener("keydown", function(event) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          sendMessage();
+        }
+      });
+    }
+  }
+
+  function checkAuthStatus() {
+    // Check URL parameters for auth results
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    const user = urlParams.get('user');
+    const error = urlParams.get('error');
+
+    if (error) {
+      showStatus(`Authentication failed: ${error}`, 'error');
+      return;
+    }
+
+    if (token && user) {
+      // Successful authentication
+      jwtToken = token;
+      currentUser = user;
+      
+      // Clean URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      // Update UI
+      showAuthenticatedState();
+      showStatus('Successfully authenticated! Emails have been processed.', 'success');
+      
+      // Connect to chat
+      setTimeout(connectWebSocket, 1000);
+      return;
+    }
+
+    // Check if user was previously authenticated (localStorage)
+    const savedToken = localStorage.getItem('jwtToken');
+    const savedUser = localStorage.getItem('currentUser');
+    
+    if (savedToken && savedUser) {
+      jwtToken = savedToken;
+      currentUser = savedUser;
+      showAuthenticatedState();
+      connectWebSocket();
+    }
+  }
+
+  function showAuthenticatedState() {
+    // Hide auth section
+    document.getElementById('authSection').style.display = 'none';
+    
+    // Show user info
+    const userInfo = document.getElementById('userInfo');
+    const userEmail = document.getElementById('userEmail');
+    userEmail.textContent = currentUser;
+    userInfo.style.display = 'block';
+    
+    // Show chat section
+    document.getElementById('chatSection').classList.add('active');
+    
+    // Save to localStorage
+    localStorage.setItem('jwtToken', jwtToken);
+    localStorage.setItem('currentUser', currentUser);
+    
+    // Check Gmail sync status
+    checkGmailSyncStatus();
+  }
+
+  function logout() {
+    // Clear tokens and user data
+    jwtToken = null;
+    currentUser = null;
+    
+    // Clear localStorage
+    localStorage.removeItem('jwtToken');
+    localStorage.removeItem('currentUser');
+    
+    // Close WebSocket
+    if (ws) {
+      ws.close();
+      ws = null;
+    }
+    
+    // Reset UI
+    document.getElementById('authSection').style.display = 'block';
+    document.getElementById('userInfo').style.display = 'none';
+    document.getElementById('chatSection').classList.remove('active');
+    document.getElementById('chat').innerHTML = '';
+    document.getElementById('status').innerHTML = '';
+    
+    showStatus('Logged out successfully', 'info');
+  }
+
+  function showStatus(message, type = 'info') {
+    const statusDiv = document.getElementById('status');
+    statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+    
+    // Auto-hide after 5 seconds for success/info messages
+    if (type === 'success' || type === 'info') {
+      setTimeout(() => {
+        statusDiv.innerHTML = '';
+      }, 5000);
+    }
+  }
+
+  // ========== WebSocket Chat ==========
+  function connectWebSocket() {
+    if (!jwtToken) {
+      showStatus("Please login first", 'error');
+      return;
+    }
+
+    // Disable send button until connection is fully established
+    document.getElementById('sendBtn').disabled = true;
+
+    // Clear chatId - let backend generate it
+    currentChatId = null;
+
+    const wsUrl = `ws://${BACKEND_URL.replace(/^http:\/\//i, '')}/ws/chat`;
+    console.log(`[WebSocket] Connecting to: ${wsUrl}`);
+    ws = new WebSocket(wsUrl);
+    
+    // Add connection timeout handling
+    let connectionTimeout = setTimeout(() => {
+      if (ws.readyState === WebSocket.CONNECTING) {
+        console.log("[WebSocket] ⏰ Connection timeout - closing");
+        ws.close();
+        showStatus("WebSocket connection timeout. Please try again.", 'error');
+      }
+    }, 30000); // 30 seconds instead of 10
+    
+    ws.onopen = () => {
+      clearTimeout(connectionTimeout); // Clear timeout on successful connection
+      console.log("[WebSocket] Connection opened, sending auth...");
+      console.log("[WebSocket] JWT token available:", !!jwtToken);
+      console.log("[WebSocket] JWT token length:", jwtToken ? jwtToken.length : 0);
+      
+      // Send only JWT token - let backend generate chatId
+      const authMessage = { jwt_token: jwtToken };
+      console.log("[WebSocket] Sending auth message:", Object.keys(authMessage));
+      
+      ws.send(JSON.stringify(authMessage));
+      // DON'T enable send button yet - wait for welcome message
+    };
+
+    ws.onmessage = (event) => {
+      console.log("[WebSocket] Raw event.data:", event.data);
+      let botResponseText = ""; 
+      let receivedChatId = null;
+      let isWelcomeMessage = false;
+      
+      try {
+        const data = JSON.parse(event.data);
+        console.log("[WebSocket] Parsed data:", data);
+        
+        // Handle keepalive messages
+        if (data.type === 'keepalive') {
+          console.log("[WebSocket] 📡 Received keepalive message");
+          return; // Don't display keepalive messages
+        }
+        
+        // Handle progress messages
+        if (data.type === 'progress') {
+          console.log(`[WebSocket] 🔄 Progress: ${data.step} - ${data.message}`);
+          showStatus(`Background sync: ${data.message}`, 'info');
+          return; // Don't display progress messages in chat
+        }
+        
+        // Extract chatId from response
+        receivedChatId = data.chatId;
+        console.log("[WebSocket] Received chatId:", receivedChatId);
+        console.log("[WebSocket] Current chatId:", currentChatId);
+        
+        // ALWAYS update currentChatId from server (backend generates unique IDs)
+        if (receivedChatId) {
+          if (!currentChatId) {
+            console.log(`[WebSocket] ✅ Received unique chat ID from server: ${receivedChatId}`);
+          } else if (receivedChatId !== currentChatId) {
+            console.log(`[WebSocket] 🔄 Chat ID updated: ${currentChatId} → ${receivedChatId}`);
+          }
+          currentChatId = receivedChatId;
+        }
+        
+        if (data && data.error && data.reply && Array.isArray(data.reply) && data.reply.length > 0) {
+          botResponseText = `Error: ${data.reply[0]}`;
+          console.log("[WebSocket] Error response:", botResponseText);
+          
+          // Handle authentication errors specifically
+          if (data.reply[0].includes("Authentication failed")) {
+            console.error("[WebSocket] Authentication failed - redirecting to login");
+            showStatus("Authentication failed. Please login again.", 'error');
+            logout(); // Force logout and redirect to login
+            return;
+          }
+        } else if (data && data.error) {
+          botResponseText = `Error: ${data.error}`;
+          console.log("[WebSocket] Error (direct):", botResponseText);
+          
+          // Handle authentication errors specifically
+          if (data.error.includes("Authentication failed")) {
+            console.error("[WebSocket] Authentication failed - redirecting to login");
+            showStatus("Authentication failed. Please login again.", 'error');
+            logout(); // Force logout and redirect to login
+            return;
+          }
+        } else if (data && data.reply && Array.isArray(data.reply) && data.reply.length > 0) {
+          botResponseText = data.reply[0];
+          console.log("[WebSocket] Bot response text:", botResponseText.substring(0, 100) + "...");
+          
+          // Check if this is the welcome message
+          if (botResponseText.includes("Connected to chat")) {
+            isWelcomeMessage = true;
+            console.log(`[WebSocket] ✅ Welcome message received with chat ID: ${currentChatId}`);
+            console.log("[WebSocket] 🔓 Enabling send button - chat ready!");
+            document.getElementById('sendBtn').disabled = false;
+          }
+        } else {
+          botResponseText = "Received an unrecognized response from server.";
+          console.warn("[WebSocket] Unrecognized data structure:", data);
+        }
+      } catch (e) {
+        botResponseText = "Error parsing message from server.";
+        console.error("[WebSocket] Error parsing message:", e, "Raw data:", event.data);
+      }
+      
+      console.log("[WebSocket] About to append message:");
+      console.log("  - receivedChatId:", receivedChatId);
+      console.log("  - currentChatId:", currentChatId);
+      console.log("  - botResponseText:", botResponseText.substring(0, 50) + "...");
+      console.log("  - isWelcomeMessage:", isWelcomeMessage);
+      
+      // Only append message if it's for the current chat
+      if (!receivedChatId || receivedChatId === currentChatId) {
+        console.log("[WebSocket] ✅ Appending message to chat");
+        appendMessage(isWelcomeMessage ? "System" : "AI Assistant", botResponseText, isWelcomeMessage ? 'system' : 'bot');
+      } else {
+        console.log("[WebSocket] ❌ Skipping message - chat ID mismatch");
+      }
+    };
+
+    ws.onerror = (event) => {
+      console.error("WebSocket error:", event);
+      appendMessage("System", "Connection error. Please try refreshing the page.", 'system');
+      document.getElementById('sendBtn').disabled = true;
+    };
+    
+    ws.onclose = () => {
+      appendMessage("System", "Disconnected from chat.", 'system');
+      document.getElementById('sendBtn').disabled = true;
+    };
+  }
+
+  function sendMessage() {
+    console.log(`[WebSocket] Attempting to send message. Connection state: ${ws ? ws.readyState : 'null'}`);
+    
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.log("[WebSocket] Connection not ready");
+      showStatus("Not connected to chat. Please wait or refresh the page.", 'error');
+      return;
+    }
+    
+    if (!currentChatId) {
+      console.log("[WebSocket] No chat ID available yet");
+      showStatus("Chat not ready. Please wait for connection to complete.", 'error');
+      return;
+    }
+    
+    const input = document.getElementById("msg");
+    const message = input.value.trim();
+    if (!message) return;
+
+    console.log(`[WebSocket] 📤 Sending message: "${message}" with server-generated chatId: ${currentChatId}`);
+    
+    // Send message with server-generated chatId
+    ws.send(JSON.stringify({ 
+      message: message,
+      chatId: currentChatId  // Always use server-generated ID
+    }));
+    
+    appendMessage("You", message, 'user');
+    input.value = "";
+  }
+
+  function appendMessage(sender, text, type = 'bot') {
+    console.log("[appendMessage] Called with:", { sender, textLength: text?.length, type });
+    
+    const chat = document.getElementById("chat");
+    if (!chat) {
+      console.error("[appendMessage] Chat element not found!");
+      return;
+    }
+    
+    const messageDiv = document.createElement("div");
+    messageDiv.classList.add("message");
+    
+    if (type === 'user') {
+      messageDiv.classList.add("user-message");
+      messageDiv.textContent = text;
+      console.log("[appendMessage] Added user message");
+    } else if (type === 'bot') {
+      messageDiv.classList.add("bot-message");
+      // Use marked.parse() to convert markdown to HTML
+      try {
+        const htmlContent = text ? marked.parse(text) : '';
+        messageDiv.innerHTML = htmlContent;
+        console.log("[appendMessage] Added bot message with HTML content");
+      } catch (e) {
+        console.error("[appendMessage] Error parsing markdown:", e);
+        messageDiv.textContent = text; // Fallback to plain text
+      }
+    } else if (type === 'system') {
+      messageDiv.classList.add("system-message");
+      messageDiv.textContent = text;
+      console.log("[appendMessage] Added system message");
+    }
+    
+    chat.appendChild(messageDiv);
+    chat.scrollTop = chat.scrollHeight;
+    console.log("[appendMessage] Message appended to chat, total messages:", chat.children.length);
+  }
+
+  // ========== Gmail Sync Functions ==========
+  async function checkGmailSyncStatus() {
+    try {
+      console.log("[Gmail Sync] Checking sync status...");
+      
+      const response = await fetch(`${BACKEND_URL}/me`, {
+        headers: {
+          'Authorization': `Bearer ${jwtToken}`
+        }
+      });
+      
+      if (response.ok) {
+        const userData = await response.json();
+        updateSyncStatusUI(userData);
+      } else {
+        console.error("[Gmail Sync] Error checking sync status:", response.status);
+      }
+    } catch (error) {
+      console.error("[Gmail Sync] Error checking sync status:", error);
+    }
+  }
+
+  function updateSyncStatusUI(userData) {
+    const syncStatusText = document.getElementById('syncStatusText');
+    const syncButton = document.getElementById('syncButton');
+    
+    const status = userData.gmail_sync_status;
+    const emailCount = userData.email_count || 0;
+    
+    console.log("[Gmail Sync] Status:", status, "Email Count:", emailCount);
+    
+    switch (status) {
+      case 'not_synced':
+        syncStatusText.textContent = 'Gmail Status: Not Synced';
+        syncStatusText.style.color = '#856404';
+        syncButton.textContent = 'Start Sync';
+        syncButton.disabled = false;
+        syncButton.style.background = '#007bff';
+        break;
+        
+      case 'syncing':
+        syncStatusText.textContent = 'Gmail Status: Syncing...';
+        syncStatusText.style.color = '#0c5460';
+        syncButton.textContent = 'Syncing...';
+        syncButton.disabled = true;
+        syncButton.style.background = '#6c757d';
+        // Continue checking status
+        setTimeout(checkGmailSyncStatus, 3000);
+        break;
+        
+      case 'synced':
+        syncStatusText.textContent = `Gmail Status: Synced (${emailCount} emails)`;
+        syncStatusText.style.color = '#155724';
+        syncButton.textContent = 'Re-sync';
+        syncButton.disabled = false;
+        syncButton.style.background = '#28a745';
+        break;
+        
+      case 'error':
+        syncStatusText.textContent = 'Gmail Status: Error';
+        syncStatusText.style.color = '#721c24';
+        syncButton.textContent = 'Retry Sync';
+        syncButton.disabled = false;
+        syncButton.style.background = '#dc3545';
+        break;
+        
+      default:
+        syncStatusText.textContent = 'Gmail Status: Unknown';
+        syncStatusText.style.color = '#6c757d';
+        syncButton.textContent = 'Start Sync';
+        syncButton.disabled = false;
+        syncButton.style.background = '#007bff';
+    }
+  }
+
+  async function startGmailSync() {
+    try {
+      console.log("[Gmail Sync] Starting Gmail sync...");
+      
+      const response = await fetch(`${BACKEND_URL}/gmail/start`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${jwtToken}`
+        }
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log("[Gmail Sync] Sync started:", result);
+        showStatus('Gmail sync started successfully!', 'success');
+        
+        // Update UI immediately
+        updateSyncStatusUI({ gmail_sync_status: 'syncing', email_count: 0 });
+        
+        // Start checking status
+        setTimeout(checkGmailSyncStatus, 3000);
+      } else {
+        const error = await response.json();
+        console.error("[Gmail Sync] Error starting sync:", error);
+        showStatus(`Failed to start Gmail sync: ${error.detail}`, 'error');
+      }
+    } catch (error) {
+      console.error("[Gmail Sync] Error starting sync:", error);
+      showStatus('Failed to start Gmail sync', 'error');
+    }
+  }
+</script>
+
+</body>
+</html>
