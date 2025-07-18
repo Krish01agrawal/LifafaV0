@@ -99,7 +99,7 @@ class DatabaseManager:
                 # Connection will be tested on first use
                 # No need to test here as it's not an async context
                 
-                db_name = f"emailStoragelifafa_shard_{i}"
+                db_name = f"pluto_money_shard_{i}"
                 self.clients[i] = client
                 self.databases[i] = client[db_name]
                 
@@ -121,7 +121,7 @@ class DatabaseManager:
                             serverSelectionTimeoutMS=3000,
                         )
                         
-                        db_name = f"emailStoragelifafa_local_shard_{i}"
+                        db_name = f"pluto_money_local_shard_{i}"
                         self.clients[i] = fallback_client
                         self.databases[i] = fallback_client[db_name]
                         
@@ -207,6 +207,17 @@ chats_collection = db["chats"]
 email_logs_collection = db["email_logs"]
 categorized_emails_collection = db["categorized_emails"]
 financial_transactions_collection = db["financial_transactions"]
+
+# Enhanced processing collections
+subscriptions_collection = db["subscriptions"]
+travel_bookings_collection = db["travel_bookings"]
+job_communications_collection = db["job_communications"]
+promotional_emails_collection = db["promotional_emails"]
+user_analytics_collection = db["user_analytics"]
+extraction_failures_collection = db["extraction_failures"]
+email_queue_collection = db["email_queue"]
+query_logs_collection = db["query_logs"]
+user_sessions_collection = db["user_sessions"]
 
 async def get_database():
     """Get the default database instance"""

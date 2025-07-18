@@ -1,3 +1,4 @@
+import os
 from .settings import Settings, settings
 from .database import DatabaseConfig
 from .constants import *
@@ -197,9 +198,9 @@ MEM0_RETRY_DELAY = 5
 USE_LOCAL_FALLBACK = not _settings.is_production
 LOCAL_MONGODB_URL = "mongodb://localhost:27017"
 
-# Shard databases - for now using single database but structured as list for scaling
-# Use local MongoDB for development to avoid Atlas authentication issues
-SHARD_DATABASES = [LOCAL_MONGODB_URL]
+# Shard databases - using cloud MongoDB cluster
+# Use the cloud MongoDB URI from environment variable
+SHARD_DATABASES = [os.getenv("MONGO_URI", LOCAL_MONGODB_URL)]
 
 # Enable aggressive compression for free tier
 ENABLE_AGGRESSIVE_COMPRESSION = True
@@ -211,11 +212,11 @@ ENABLE_AGGRESSIVE_COMPRESSION = True
 def get_database_for_user(user_id: str) -> str:
     """Get database for user (simple hash-based routing)"""
     if not ENABLE_DATABASE_SHARDING:
-        return "emailStoragelifafa"  # Use local database name
+        return "pluto_money"  # Use cloud database name
     
     # Simple hash-based routing for multiple databases
     shard_index = hash(user_id) % len(SHARD_DATABASES)
-    return f"emailStoragelifafa_shard_{shard_index}"
+    return f"pluto_money_shard_{shard_index}"
 
 def calculate_email_importance(email_data: dict) -> float:
     """🔧 MASSIVELY ENHANCED: Calculate email importance score - PRESERVE MORE EMAILS"""

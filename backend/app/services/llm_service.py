@@ -29,33 +29,58 @@ class LLMService:
                     pass
             
             prompt = f"""
-You are an email classifier. Categorize the following email into one of these detailed categories:
+You are an expert email classifier. Categorize the following email into one of these detailed categories:
+
+CRITICAL CLASSIFICATION RULES:
+1. Classify as "finance" if there is ANY financial transaction, payment, bill, order, or receipt
+2. Food delivery emails (Swiggy, Zomato, etc.) with order confirmations, receipts, or invoices are "finance"
+3. Shopping emails with order confirmations, receipts, or invoices are "finance"
+4. Subscription emails (Netflix, Spotify, etc.) with billing, payments, or receipts are "finance"
+5. Transport services (Uber, Ola, etc.) with receipts, invoices, or payment confirmations are "finance"
+6. Utility bills (electricity, water, gas, internet) are "finance"
+7. Bank statements, UPI confirmations, credit card statements are "finance"
+8. Any email with "receipt", "invoice", "order confirmation", "payment", "transaction" is "finance"
+9. Only classify as "subscription" if it's a free service or non-payment related
+10. When in doubt about financial content, classify as "finance" - let extraction determine if it's valid
+
+EXAMPLES:
+- Swiggy order confirmation/receipt/invoice = "finance"
+- Swiggy order details = "finance"
+- Zomato order confirmation = "finance"
+- Netflix billing email = "finance"
+- Uber ride receipt = "finance"
+- Electricity bill = "finance"
+- Bank transaction alert = "finance"
+- UPI payment confirmation = "finance"
+- Credit card statement = "finance"
+- Insurance premium payment = "finance"
+- Any email with "receipt", "invoice", "order" = "finance"
 
 Categories:
-- finance: Bills, payments, transactions, banking, credit cards, loans, investments, UPI transactions, bank alerts
-- travel: Flights, hotels, bookings, transportation, vacation packages, travel insurance, car rentals
+- finance: Bills, payments, transactions, banking, credit cards, loans, investments, UPI transactions, bank alerts, subscription payments, shopping payments, food delivery payments, transport payments, utility payments, insurance payments, order confirmations with amounts, any email involving money or financial transactions
+- travel: Flights, hotels, bookings, transportation, vacation packages, travel insurance, car rentals (only if no payment involved)
 - job: Job applications, interviews, work communications, career opportunities, recruitment, HR updates
-- promotion: Offers, discounts, marketing emails, sales, deals, coupons, cashback, referral programs
-- subscription: Service subscriptions, renewals, memberships, streaming services, software licenses, cloud services
-- shopping: Online purchases, order confirmations, delivery updates, e-commerce, retail, marketplace
+- promotion: Offers, discounts, marketing emails, sales, deals, coupons, cashback, referral programs (only if no payment involved)
+- subscription: Free service subscriptions, non-payment memberships, free trials (NOT paid subscriptions)
+- shopping: Online purchases, order confirmations, delivery updates, e-commerce, retail, marketplace (only if no payment involved)
 - social: Social media notifications, friend requests, community updates, Reddit, LinkedIn, Facebook
-- health: Medical appointments, health insurance, fitness, wellness, pharmacy, healthcare services
-- education: Course enrollments, academic updates, learning platforms, online courses, certifications
-- entertainment: Movie tickets, event bookings, gaming, streaming, concerts, shows, sports
-- utilities: Electricity, water, gas, internet, phone bills, municipal services, broadband
-- insurance: Policy updates, claims, coverage information, health insurance, car insurance, life insurance
-- real_estate: Property listings, rent payments, mortgage updates, real estate services, property management
-- food: Food delivery, restaurant bookings, grocery orders, meal plans, food subscriptions
-- transport: Ride-sharing, public transport, fuel, parking, vehicle services, logistics
-- technology: Software updates, tech support, IT services, cybersecurity, digital services
-- finance_investment: Investment updates, stock alerts, mutual funds, trading, financial planning
+- health: Medical appointments, health insurance, fitness, wellness, pharmacy, healthcare services (only if no payment involved)
+- education: Course enrollments, academic updates, learning platforms, online courses, certifications (only if no payment involved)
+- entertainment: Movie tickets, event bookings, gaming, streaming, concerts, shows, sports (only if no payment involved)
+- utilities: Electricity, water, gas, internet, phone bills, municipal services, broadband (only if no payment involved)
+- insurance: Policy updates, claims, coverage information, health insurance, car insurance, life insurance (only if no payment involved)
+- real_estate: Property listings, rent payments, mortgage updates, real estate services, property management (only if no payment involved)
+- food: Food delivery, restaurant bookings, grocery orders, meal plans, food subscriptions (only if no payment involved)
+- transport: Ride-sharing, public transport, fuel, parking, vehicle services, logistics (only if no payment involved)
+- technology: Software updates, tech support, IT services, cybersecurity, digital services (only if no payment involved)
+- finance_investment: Investment updates, stock alerts, mutual funds, trading, financial planning (only if no payment involved)
 - government: Government services, tax updates, official communications, public services
 - charity: Donations, fundraising, NGO updates, social causes, volunteer opportunities
 - other: Everything else not covered above
 
 Email:
 Subject: {email_subject}
-Body: {email_body[:2000]}  # Increased limit for better classification
+Body: {email_body[:3000]}  # Increased limit for better classification
 
 Return only the category name.
 """
@@ -88,11 +113,36 @@ Return only the category name.
                     pass
             
             prompt = f"""
-You are a financial data extractor. Extract detailed transaction data from this email:
+You are a financial data extractor. Extract detailed transaction data from this email.
+
+CRITICAL REQUIREMENTS:
+- ONLY extract data if there is a REAL financial transaction (payment, bill, order, etc.)
+- If this is just a promotional email, subscription notification, or general communication, return null for all fields
+- Look for SPECIFIC financial information:
+  * Actual payment amounts (₹, $, etc.)
+  * Order confirmations with prices
+  * Bill payments with amounts
+  * Transaction receipts
+  * Payment confirmations
+  * Bank statements
+  * UPI transaction details
+
+EXAMPLES OF WHAT TO EXTRACT:
+✅ Swiggy order confirmation/receipt with amount: ₹299
+✅ Swiggy order details with items and total
+✅ Zomato order confirmation with amount
+✅ SBI Mutual Fund transaction: ₹5000
+✅ Electricity bill payment: ₹1200
+✅ Netflix subscription: ₹499
+❌ Slack account creation (no payment)
+❌ GitHub welcome email (no payment)
+❌ General promotional emails (no payment)
+
+IMPORTANT: Food delivery emails (Swiggy, Zomato) are ALWAYS financial transactions - extract order details, amounts, items, delivery charges, taxes, etc.
 
 Email:
 Subject: {email_subject}
-Body: {email_body[:3000]}  # Increased limit for better extraction
+Body: {email_body[:4000]}  # Increased limit for better extraction
 
 Return JSON in this exact format with detailed UPI and bank information:
 {{
