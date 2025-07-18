@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     
     # Database
     mongodb_url: str = "mongodb://localhost:27017"
-    mongodb_database: str = "emailStoragelifafa"
+    mongodb_database: str = "pluto_money"
     
     # Authentication
     secret_key: str = "your-secret-key-change-in-production"

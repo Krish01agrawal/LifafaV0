@@ -101,6 +101,9 @@ class EmailWorker:
             # Step 1: Classify email
             category = await self._classify_email(email)
             
+            # Step 2: Store in categorized_emails collection for ALL categories
+            await self._store_categorized_email(user_id, email_id, category, email)
+            
             # Update with classification
             await self._get_db().email_logs.update_one(
                 {"_id": email["_id"]},
@@ -114,7 +117,7 @@ class EmailWorker:
             )
             
             # Step 2: Extract structured data based on category
-            if category in ["finance", "travel", "job", "promotion"]:
+            if category in ["finance", "subscription", "travel", "job", "promotion"]:
                 extracted_data = await self._extract_structured_data(email, category)
                 
                 if extracted_data:
@@ -189,60 +192,16 @@ class EmailWorker:
     async def _classify_email(self, email: Dict[str, Any]) -> str:
         """Classify email into categories using LLM."""
         try:
-            # Extract subject and body from raw Gmail data
-            raw_data = email.get("raw_data", {})
+            # Extract subject and body using helper method
+            subject, body = self._extract_email_content(email)
             
-            # Find subject from headers
-            subject = ""
-            body = email.get("snippet", "")
+            # Combine subject and body for better classification
+            full_content = f"Subject: {subject}\n\nBody: {body}"
             
-            # Try to get headers from payload
-            if raw_data and "payload" in raw_data:
-                headers = raw_data["payload"].get("headers", [])
-                for header in headers:
-                    if header.get("name", "").lower() == "subject":
-                        subject = header.get("value", "")
-                        break
-                
-                # Try to get body from payload parts
-                if "parts" in raw_data["payload"]:
-                    for part in raw_data["payload"]["parts"]:
-                        if part.get("mimeType") == "text/plain":
-                            encoded_body = part.get("body", {}).get("data", "")
-                            if encoded_body:
-                                try:
-                                    import base64
-                                    body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
-                                except:
-                                    body = encoded_body
-                            break
-                        elif part.get("mimeType") == "text/html":
-                            encoded_body = part.get("body", {}).get("data", "")
-                            if encoded_body:
-                                try:
-                                    import base64
-                                    body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
-                                except:
-                                    body = encoded_body
-                            break
-                else:
-                    # Try to get body from payload body directly
-                    encoded_body = raw_data["payload"].get("body", {}).get("data", "")
-                    if encoded_body:
-                        try:
-                            import base64
-                            body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
-                        except:
-                            body = encoded_body
+            logger.info(f"Classifying email - Subject: {subject[:50]}..., Body length: {len(body)} chars")
             
-            # If no body found, use snippet
-            if not body:
-                body = email.get("snippet", "")
-            
-            logger.info(f"Classifying email - Subject: {subject[:50]}..., Body: {body[:100]}...")
-            
-            # Use LLM to classify
-            category = await llm_service.classify_email(subject, body)
+            # Use LLM to classify with full content
+            category = await llm_service.classify_email(subject, full_content)
             
             return category
             
@@ -253,72 +212,28 @@ class EmailWorker:
     async def _extract_structured_data(self, email: Dict[str, Any], category: str) -> Dict[str, Any]:
         """Extract structured data based on email category."""
         try:
-            # Extract subject and body from raw Gmail data
-            raw_data = email.get("raw_data", {})
+            # Extract subject and body using helper method
+            subject, body = self._extract_email_content(email)
             
-            # Find subject from headers
-            subject = ""
-            body = email.get("snippet", "")
+            # Combine subject and body for better extraction
+            full_content = f"Subject: {subject}\n\nBody: {body}"
             
-            # Try to get headers from payload
-            if raw_data and "payload" in raw_data:
-                headers = raw_data["payload"].get("headers", [])
-                for header in headers:
-                    if header.get("name", "").lower() == "subject":
-                        subject = header.get("value", "")
-                        break
-                
-                # Try to get body from payload parts
-                if "parts" in raw_data["payload"]:
-                    for part in raw_data["payload"]["parts"]:
-                        if part.get("mimeType") == "text/plain":
-                            encoded_body = part.get("body", {}).get("data", "")
-                            if encoded_body:
-                                try:
-                                    import base64
-                                    body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
-                                except:
-                                    body = encoded_body
-                            break
-                        elif part.get("mimeType") == "text/html":
-                            encoded_body = part.get("body", {}).get("data", "")
-                            if encoded_body:
-                                try:
-                                    import base64
-                                    body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
-                                except:
-                                    body = encoded_body
-                            break
-                else:
-                    # Try to get body from payload body directly
-                    encoded_body = raw_data["payload"].get("body", {}).get("data", "")
-                    if encoded_body:
-                        try:
-                            import base64
-                            body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
-                        except:
-                            body = encoded_body
-            
-            # If no body found, use snippet
-            if not body:
-                body = email.get("snippet", "")
-            
-            logger.info(f"Extracting {category} data - Subject: {subject[:50]}..., Body: {body[:100]}...")
+            logger.info(f"Extracting {category} data - Subject: {subject[:50]}..., Body length: {len(body)} chars")
             
             if category == "finance":
-                return await llm_service.extract_financial_data(subject, body)
+                return await llm_service.extract_financial_data(subject, full_content)
             elif category == "travel":
-                return await llm_service.extract_travel_data(subject, body)
+                return await llm_service.extract_travel_data(subject, full_content)
             elif category == "job":
-                return await llm_service.extract_job_data(subject, body)
+                return await llm_service.extract_job_data(subject, full_content)
             elif category == "promotion":
-                return await llm_service.extract_promotional_data(subject, body)
+                return await llm_service.extract_promotional_data(subject, full_content)
             elif category == "subscription":
-                return await llm_service.extract_subscription_data(subject, body)
+                return await llm_service.extract_subscription_data(subject, full_content)
             elif category in ["shopping", "food", "transport", "technology", "finance_investment"]:
-                return await llm_service.extract_financial_data(subject, body)  # Use financial extraction for these
+                return await llm_service.extract_financial_data(subject, full_content)  # Use financial extraction for these
             elif category in ["utilities", "insurance", "real_estate", "health", "education", "entertainment"]:
-                return await llm_service.extract_financial_data(subject, body)  # Use financial extraction for these
+                return await llm_service.extract_financial_data(subject, full_content)  # Use financial extraction for these
             else:
                 return {}
                 
@@ -329,15 +244,47 @@ class EmailWorker:
     async def _store_extracted_data(self, user_id: str, email_id: str, category: str, data: Dict[str, Any]):
         """Store extracted data in appropriate collection."""
         try:
+            # Safely handle None data
+            if not data:
+                logger.warning(f"No data to store for email {email_id}")
+                return
+            
+            # Validate financial data - only store if it has meaningful information
+            if category == "finance":
+                if not self._is_valid_financial_data(data):
+                    logger.info(f"Skipping financial data for email {email_id} - insufficient data")
+                    return
+            
             # Add common fields
             data["user_id"] = user_id
             data["email_id"] = email_id
             data["created_at"] = datetime.utcnow()
             data["updated_at"] = datetime.utcnow()
             
-            # Store in appropriate collection
+            # Update categorized_emails collection with extracted data
+            update_data = {
+                "secondary_category": self._safe_get(data, "service_category"),
+                "tertiary_category": self._safe_get(data, "merchant_category"),
+                "confidence": self._safe_get(data, "confidence_score", 0.8),
+                "key_indicators": self._generate_key_indicators(data),
+                "merchant_detected": self._safe_get(data, "merchant_canonical"),
+                "priority": self._calculate_priority(data),
+                "importance_score": self._safe_get(data, "importance_score", 5.0),
+                "financial_data_extracted": True,
+                "extracted_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }
+            
+            await self._get_db().categorized_emails.update_one(
+                {"user_id": user_id, "email_id": email_id},
+                {"$set": update_data}
+            )
+            
+            # Store in appropriate specialized collection
             if category == "finance":
-                await self._get_db().financial_transactions.insert_one(data)
+                # Structure the data properly for financial_transactions collection
+                financial_data = self._structure_financial_data(data, user_id, email_id)
+                await self._get_db().financial_transactions.insert_one(financial_data)
             elif category == "travel":
                 await self._get_db().travel_bookings.insert_one(data)
             elif category == "job":
@@ -345,10 +292,15 @@ class EmailWorker:
             elif category == "promotion":
                 await self._get_db().promotional_emails.insert_one(data)
             elif category == "subscription":
+                # Store subscription data in both collections
                 await self._get_db().subscriptions.insert_one(data)
+                # Also store as financial transaction since subscriptions involve payments
+                financial_data = self._structure_financial_data(data, user_id, email_id)
+                await self._get_db().financial_transactions.insert_one(financial_data)
             elif category in ["shopping", "food", "transport", "technology", "finance_investment", "utilities", "insurance", "real_estate", "health", "education", "entertainment"]:
                 # Store financial-like data in financial_transactions
-                await self._get_db().financial_transactions.insert_one(data)
+                financial_data = self._structure_financial_data(data, user_id, email_id)
+                await self._get_db().financial_transactions.insert_one(financial_data)
             
             # Update user progress
             await self._get_db().users.update_one(
@@ -363,6 +315,103 @@ class EmailWorker:
             
         except Exception as e:
             logger.error(f"Error storing extracted data: {e}")
+            raise
+    
+    async def _store_categorized_email(self, user_id: str, email_id: str, category: str, email: Dict[str, Any]):
+        """Store categorized email in categorized_emails collection for ALL categories."""
+        try:
+            # Extract subject and body from raw Gmail data
+            raw_data = email.get("raw_data", {})
+            
+            # Find subject from headers
+            subject = ""
+            body = email.get("snippet", "")
+            
+            # Try to get headers from payload
+            if raw_data and "payload" in raw_data:
+                headers = raw_data["payload"].get("headers", [])
+                for header in headers:
+                    if header.get("name", "").lower() == "subject":
+                        subject = header.get("value", "")
+                        break
+                
+                # Try to get body from payload parts
+                if "parts" in raw_data["payload"]:
+                    for part in raw_data["payload"]["parts"]:
+                        if part.get("mimeType") == "text/plain":
+                            encoded_body = part.get("body", {}).get("data", "")
+                            if encoded_body:
+                                try:
+                                    import base64
+                                    body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
+                                except:
+                                    body = encoded_body
+                            break
+                        elif part.get("mimeType") == "text/html":
+                            encoded_body = part.get("body", {}).get("data", "")
+                            if encoded_body:
+                                try:
+                                    import base64
+                                    body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
+                                except:
+                                    body = encoded_body
+                            break
+                else:
+                    # Try to get body from payload body directly
+                    encoded_body = raw_data["payload"].get("body", {}).get("data", "")
+                    if encoded_body:
+                        try:
+                            import base64
+                            body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
+                        except:
+                            body = encoded_body
+            
+            # If no body found, use snippet
+            if not body:
+                body = email.get("snippet", "")
+            
+            # Generate key indicators
+            key_indicators = []
+            if subject:
+                key_indicators.append(f"Subject: {subject[:50]}")
+            if body:
+                # Extract first few words as indicators
+                words = body.split()[:5]
+                key_indicators.append(f"Content: {' '.join(words)}")
+            
+            # Create categorized email document
+            categorized_email = {
+                "user_id": user_id,
+                "email_id": email_id,
+                "primary_category": category,
+                "secondary_category": None,
+                "tertiary_category": None,
+                "confidence": 0.8,  # Default confidence
+                "key_indicators": key_indicators,
+                "merchant_detected": None,
+                "transaction_likely": category in ["finance", "subscription", "shopping", "food", "transport", "technology", "finance_investment", "utilities", "insurance", "real_estate", "health", "education", "entertainment"],
+                "priority": "low",  # Default priority
+                "importance_score": 5.0,  # Default importance
+                "original_email": email,
+                "categorized": True,
+                "categorized_at": datetime.utcnow(),
+                "financial_data_extracted": False,  # Will be updated if structured data is extracted
+                "extracted_at": None,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }
+            
+            # Store in categorized_emails collection
+            await self._get_db().categorized_emails.update_one(
+                {"user_id": user_id, "email_id": email_id},
+                {"$set": categorized_email},
+                upsert=True
+            )
+            
+            logger.debug(f"Stored categorized email for {email_id} with category {category}")
+            
+        except Exception as e:
+            logger.error(f"Error storing categorized email: {e}")
             raise
     
     async def _update_progress_cache(self, user_id: str, success_count: int, failure_count: int):
@@ -423,6 +472,208 @@ class EmailWorker:
             
         except Exception as e:
             logger.error(f"Error updating user categorization status: {e}")
+    
+    def _generate_key_indicators(self, data: Dict[str, Any]) -> List[str]:
+        """Generate key indicators from extracted data"""
+        indicators = []
+        
+        # Safely handle None data
+        if not data:
+            return indicators
+        
+        if data.get("merchant_canonical"):
+            indicators.append(f"Merchant: {data['merchant_canonical']}")
+        
+        if data.get("amount") is not None:
+            indicators.append(f"Amount: {data['amount']}")
+        
+        if data.get("transaction_type"):
+            indicators.append(f"Type: {data['transaction_type']}")
+        
+        if data.get("payment_method"):
+            indicators.append(f"Payment: {data['payment_method']}")
+        
+        if data.get("service_category"):
+            indicators.append(f"Service: {data['service_category']}")
+        
+        return indicators
+    
+    def _calculate_priority(self, data: Dict[str, Any]) -> str:
+        """Calculate priority based on data"""
+        # Safely handle None data
+        if not data:
+            return "low"
+        
+        if data.get("requires_action"):
+            return "high"
+        
+        # Safely handle amount comparison
+        amount = data.get("amount")
+        if amount is not None and isinstance(amount, (int, float)) and amount > 1000:
+            return "medium"
+        
+        return "low"
+    
+    def _safe_get(self, data: Dict[str, Any], key: str, default=None):
+        """Safely get value from data, handling None values"""
+        if not data:
+            return default
+        
+        value = data.get(key, default)
+        if value is None:
+            return default
+        
+        return value
+    
+    def _is_valid_financial_data(self, data: Dict[str, Any]) -> bool:
+        """Check if financial data has meaningful information."""
+        if not data:
+            return False
+        
+        # Check for food delivery services - these are always valid
+        merchant_name = self._safe_get(data, "merchant_name", "").lower()
+        merchant_canonical = self._safe_get(data, "merchant_canonical", "").lower()
+        service_name = self._safe_get(data, "service_name", "").lower()
+        
+        food_delivery_keywords = ["swiggy", "zomato", "blinkit", "grofers", "dunzo", "zepto"]
+        
+        # If it's a food delivery service, it's always valid
+        for keyword in food_delivery_keywords:
+            if (keyword in merchant_name or 
+                keyword in merchant_canonical or 
+                keyword in service_name):
+                logger.info(f"Food delivery transaction detected: {merchant_name} - considering valid")
+                return True
+        
+        # For other transactions, check if at least 2 key fields have meaningful values
+        key_fields = [
+            "amount", "merchant_canonical", "merchant_name", 
+            "transaction_type", "payment_method", "transaction_reference",
+            "invoice_number", "order_id", "receipt_number"
+        ]
+        
+        meaningful_fields = 0
+        for field in key_fields:
+            value = self._safe_get(data, field)
+            if value and value != "" and value != 0:
+                meaningful_fields += 1
+        
+        # Must have at least 2 meaningful fields to be considered valid
+        return meaningful_fields >= 2
+    
+    def _extract_email_content(self, email: Dict[str, Any]) -> tuple[str, str]:
+        """Extract subject and body from email raw data."""
+        raw_data = email.get("raw_data", {})
+        
+        # Find subject from headers
+        subject = ""
+        body = email.get("snippet", "")
+        
+        # Try to get headers from payload
+        if raw_data and "payload" in raw_data:
+            headers = raw_data["payload"].get("headers", [])
+            for header in headers:
+                if header.get("name", "").lower() == "subject":
+                    subject = header.get("value", "")
+                    break
+            
+            # Try to get body from payload parts
+            if "parts" in raw_data["payload"]:
+                # Try to get the largest text content
+                best_body = ""
+                best_size = 0
+                
+                for part in raw_data["payload"]["parts"]:
+                    if part.get("mimeType") in ["text/plain", "text/html"]:
+                        encoded_body = part.get("body", {}).get("data", "")
+                        if encoded_body:
+                            try:
+                                import base64
+                                decoded_body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
+                                if len(decoded_body) > best_size:
+                                    best_body = decoded_body
+                                    best_size = len(decoded_body)
+                            except:
+                                if len(encoded_body) > best_size:
+                                    best_body = encoded_body
+                                    best_size = len(encoded_body)
+                
+                if best_body:
+                    body = best_body
+            else:
+                # Try to get body from payload body directly
+                encoded_body = raw_data["payload"].get("body", {}).get("data", "")
+                if encoded_body:
+                    try:
+                        import base64
+                        body = base64.urlsafe_b64decode(encoded_body + '=' * (-len(encoded_body) % 4)).decode('utf-8')
+                    except:
+                        body = encoded_body
+        
+        # If no body found, use snippet
+        if not body:
+            body = email.get("snippet", "")
+        
+        return subject, body
+    
+    def _structure_financial_data(self, data: Dict[str, Any], user_id: str, email_id: str) -> Dict[str, Any]:
+        """Structure financial data for the financial_transactions collection"""
+        # Safely handle nested dictionaries
+        bank_details = data.get("bank_details", {}) if data else {}
+        upi_details = data.get("upi_details", {}) if data else {}
+        receiver_details = upi_details.get("receiver", {}) if upi_details else {}
+        
+        structured_data = {
+            "user_id": user_id,
+            "email_id": email_id,
+            "transaction_type": self._safe_get(data, "transaction_type"),
+            "amount": self._safe_get(data, "amount"),
+            "currency": self._safe_get(data, "currency", "INR"),
+            "transaction_date": self._safe_get(data, "transaction_date"),
+            "due_date": self._safe_get(data, "due_date"),
+            "service_period_start": self._safe_get(data, "service_period_start"),
+            "service_period_end": self._safe_get(data, "service_period_end"),
+            "merchant_canonical": self._safe_get(data, "merchant_canonical"),
+            "merchant_original": self._safe_get(data, "merchant_name"),
+            "merchant_patterns": self._safe_get(data, "merchant_patterns", []),
+            "service_category": self._safe_get(data, "service_category"),
+            "service_name": self._safe_get(data, "service_name"),
+            "payment_method": self._safe_get(data, "payment_method"),
+            "payment_status": self._safe_get(data, "payment_status"),
+            "transaction_reference": self._safe_get(data, "transaction_reference"),
+            "invoice_number": self._safe_get(data, "invoice_number"),
+            "order_id": self._safe_get(data, "order_id"),
+            "receipt_number": self._safe_get(data, "receipt_number"),
+            "bank_name": bank_details.get("bank_name") if bank_details else None,
+            "account_number": bank_details.get("account_number") if bank_details else None,
+            "upi_id": receiver_details.get("upi_id") if receiver_details else None,
+            "is_subscription": self._safe_get(data, "is_subscription", False),
+            "subscription_frequency": self._safe_get(data, "subscription_frequency"),
+            "next_renewal_date": self._safe_get(data, "next_renewal_date"),
+            "is_automatic_payment": self._safe_get(data, "is_automatic_payment", False),
+            "total_amount": self._safe_get(data, "total_amount", self._safe_get(data, "amount")),
+            "base_amount": self._safe_get(data, "base_amount"),
+            "tax_amount": self._safe_get(data, "tax_amount"),
+            "discount_amount": self._safe_get(data, "discount_amount"),
+            "late_fee_amount": self._safe_get(data, "late_fee_amount"),
+            "processing_fee": self._safe_get(data, "processing_fee"),
+            "cashback_amount": self._safe_get(data, "cashback_amount"),
+            "billing_period_start": self._safe_get(data, "billing_period_start"),
+            "billing_period_end": self._safe_get(data, "billing_period_end"),
+            "bank_details": bank_details,
+            "upi_details": upi_details,
+            "card_details": self._safe_get(data, "card_details", {}),
+            "subscription_details": self._safe_get(data, "subscription_details", {}),
+            "primary_category": "finance",
+            "secondary_category": self._safe_get(data, "service_category"),
+            "tertiary_category": self._safe_get(data, "merchant_category"),
+            "confidence_score": self._safe_get(data, "confidence_score", 0.8),
+            "extraction_confidence": self._safe_get(data, "extraction_confidence", 0.95),
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
+        
+        return structured_data
 
 # Global worker instance
 email_worker = EmailWorker()
@@ -432,20 +683,11 @@ async def queue_email_processing(user_id: str, email_ids: List[str]):
     try:
         logger.info(f"Queueing {len(email_ids)} emails for processing")
         
-        # Process in batches
+        # Process in batches directly without using email_queue collection
+        # to avoid duplicate key errors with the unique index
         batch_size = settings.email_batch_size
         for i in range(0, len(email_ids), batch_size):
             batch = email_ids[i:i + batch_size]
-            
-            # Add to MongoDB queue (simple implementation)
-            await DatabaseService.get_database().email_queue.insert_one({
-                "user_id": user_id,
-                "email_ids": batch,
-                "status": "pending",
-                "priority": 1,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
-            })
             
             # Process immediately (in production, you'd use a proper task queue)
             await email_worker.process_email_batch(user_id, batch)
