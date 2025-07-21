@@ -1,11 +1,11 @@
 import asyncio
 import json
 import logging
+import os
 import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from websockets.exceptions import ConnectionClosed
 from starlette.websockets import WebSocketState
-from app.intelligent_query_processor import process_user_query
 from .auth import decode_jwt_token_websocket
 
 # Configure logging

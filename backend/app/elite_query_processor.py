@@ -889,4 +889,19 @@ elite_processor = EliteQueryProcessor()
 
 async def process_elite_query(user_id: str, query: str) -> Dict[str, Any]:
     """Process a user query using the elite query processor"""
-    return await elite_processor.process_query(user_id, query) 
+    return await elite_processor.process_query(user_id, query)
+
+async def get_query_suggestions(user_id: str) -> List[str]:
+    """Get personalized query suggestions for the user"""
+    return [
+        "What subscriptions do I have?",
+        "Show me my financial transactions",
+        "Analyze my spending patterns",
+        "What job communications have I received?",
+        "List my travel bookings",
+        "Show me promotional offers",
+        "What are my recurring payments?",
+        "Give me insights about my expenses",
+        "Show me high-value transactions",
+        "What services am I subscribed to?"
+    ] 

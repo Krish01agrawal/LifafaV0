@@ -13,7 +13,7 @@ from contextlib import suppress
 from app.config.settings import settings
 from app.api import auth, sync, query, health
 from app.api.intelligent_email_system import router as intelligent_email_router
-from app.api.enhanced_processing import router as enhanced_processing_router
+# Enhanced processing router removed - not part of main flow
 from app.api.financial_analytics import router as financial_analytics_router
 from app.services.cache_service import InMemoryCache
 from app.services.database_service import DatabaseService
@@ -107,7 +107,6 @@ app.include_router(sync.router, prefix="/sync", tags=["Email Sync"])
 app.include_router(query.router, prefix="/query", tags=["Query"])
 app.include_router(health.router, prefix="/health", tags=["Health"])
 app.include_router(intelligent_email_router)
-app.include_router(enhanced_processing_router)
 app.include_router(financial_analytics_router)
 
 # Add Gmail sync router

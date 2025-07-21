@@ -42,10 +42,10 @@ from ..advanced_financial_extractor import (
     get_financial_extraction_status,
     AdvancedFinancialExtractor
 )
-from ..intelligent_query_processor import (
-    process_user_query,
+from ..elite_query_processor import (
+    process_elite_query as process_user_query,
     get_query_suggestions,
-    IntelligentQueryProcessor
+    EliteQueryProcessor
 )
 from ..mongodb_optimizer import (
     optimize_database_indexes,
