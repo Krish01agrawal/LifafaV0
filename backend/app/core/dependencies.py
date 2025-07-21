@@ -208,4 +208,25 @@ def get_search_params(
     return {
         "query": query.strip(),
         "max_results": max_results or settings.default_email_limit
-    } 
+    }
+
+
+async def get_database():
+    """
+    Get database instance for dependency injection.
+    
+    Returns:
+        Database: Database instance
+        
+    Raises:
+        HTTPException: If database connection fails
+    """
+    try:
+        await DatabaseService.initialize()
+        return DatabaseService.get_database()
+    except Exception as e:
+        logger.error(f"Error getting database: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database connection failed"
+        ) 

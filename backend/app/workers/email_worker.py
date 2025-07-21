@@ -158,6 +158,15 @@ class EmailWorker:
                     }
                 )
             
+            # cleanup raw data for non-financial categories to save space
+            if category not in [
+                "finance", "subscription", "shopping", "food", "transport", "technology", "finance_investment"
+            ]:
+                await self._get_db().email_logs.update_one(
+                    {"_id": email["_id"]},
+                    {"$unset": {"raw_data": "", "raw_data_gzip": ""}}
+                )
+            
             logger.debug(f"Successfully processed email {email_id}")
             return True
             
@@ -305,10 +314,7 @@ class EmailWorker:
             # Update user progress
             await self._get_db().users.update_one(
                 {"_id": user_id},
-                {
-                    "$inc": {"emails_categorized": 1},
-                    "$set": {"categorization_status": "in_progress"}
-                }
+                {"$inc": {"emails_categorized": 1}}
             )
             
             logger.debug(f"Stored {category} data for email {email_id}")
@@ -445,11 +451,24 @@ class EmailWorker:
                 "user_id": user_id,
                 "classification_status": "failed"
             })
+            pending_emails = await self._get_db().email_logs.count_documents({
+                "user_id": user_id,
+                "$or": [
+                    {"classification_status": {"$in": ["pending", None]}},
+                    {"classification_status": {"$exists": False}}
+                ]
+            })
             
-            # Determine categorization status
-            if processed_emails == total_emails and total_emails > 0:
+            # Fetch expected total from user document
+            user_doc = await self._get_db().users.find_one({"_id": ObjectId(user_id)})
+            expected_total = user_doc.get("emails_to_categorize", total_emails)
+
+            # Determine categorization status with more robust logic
+            if total_emails == 0:
+                categorization_status = "not_started"
+            elif (processed_emails + failed_emails) >= total_emails and total_emails > 0:
                 categorization_status = "completed"
-            elif processed_emails > 0 or failed_emails > 0:
+            elif processed_emails > 0 or failed_emails > 0 or pending_emails > 0:
                 categorization_status = "in_progress"
             else:
                 categorization_status = "not_started"
@@ -462,13 +481,22 @@ class EmailWorker:
                         "categorization_status": categorization_status,
                         "emails_categorized": processed_emails,
                         "emails_failed": failed_emails,
+                        "emails_to_categorize": total_emails,  # Update with actual total
                         "categorization_completed_at": datetime.utcnow() if categorization_status == "completed" else None,
                         "updated_at": datetime.utcnow()
                     }
                 }
             )
+
+            # If categorization finished, also mark gmail_sync_status -> completed for UI
+            if categorization_status == "completed":
+                await self._get_db().users.update_one(
+                    {"_id": ObjectId(user_id)},
+                    {"$set": {"gmail_sync_status": "completed", "updated_at": datetime.utcnow()}}
+                )
+                logger.info(f"🎉 DASHBOARD READY for user {user_id} - all emails processed")
             
-            logger.info(f"Updated user {user_id} categorization status to: {categorization_status} ({processed_emails}/{total_emails} processed)")
+            logger.info(f"Updated user {user_id} categorization status to: {categorization_status} ({processed_emails}/{total_emails} processed, {pending_emails} pending)")
             
         except Exception as e:
             logger.error(f"Error updating user categorization status: {e}")

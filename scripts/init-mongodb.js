@@ -19,8 +19,8 @@ print('👥 Setting up users collection...');
 db.createCollection('users');
 
 // Create indexes for users collection
-db.users.createIndex({ "user_id": 1 }, { unique: true, name: "idx_user_id" });
 db.users.createIndex({ "email": 1 }, { unique: true, name: "idx_email" });
+db.users.createIndex({ "google_id": 1 }, { name: "idx_google_id" });
 db.users.createIndex({ "last_sync_timestamp": 1 }, { name: "idx_last_sync" });
 db.users.createIndex({ "initial_gmailData_sync": 1, "background_sync_needed": 1 }, { name: "idx_sync_status" });
 db.users.createIndex({ "created_at": 1 }, { name: "idx_created_at" });

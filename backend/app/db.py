@@ -1213,7 +1213,8 @@ async def create_minimal_indexes():
                 chats_coll = database["chats"]
                 
                 # Essential indexes only
-                await users_coll.create_index([("user_id", 1)], unique=True, background=True)
+                await users_coll.create_index([("email", 1)], unique=True, background=True)
+                await users_coll.create_index([("google_id", 1)], background=True)
                 await emails_coll.create_index([("user_id", 1), ("date", -1)], background=True)
                 await chats_coll.create_index([("user_id", 1), ("timestamp", -1)], background=True)
                 

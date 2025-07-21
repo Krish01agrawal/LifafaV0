@@ -101,7 +101,13 @@ async def authenticate_google(request: AuthRequest):
         credentials = await gmail_service.authenticate_user(request.auth_code)
         
         # Get or create user in database
-        db = DatabaseService.get_database()
+        try:
+            db = DatabaseService.get_database()
+        except RuntimeError:
+            # Database not initialized (possible code reload) – initialize on demand
+            from app.services.database_service import DatabaseService as _DS
+            await _DS.initialize()
+            db = _DS.get_database()
         
         # Check if user exists
         existing_user = await db.users.find_one({"email": credentials["email"]})
@@ -339,11 +345,15 @@ async def google_oauth_callback(code: str, scope: str):
             # Check if user exists
             existing_user = await db.users.find_one({"email": user_info.get("email")})
             logger.info(f"Existing user lookup result: {existing_user is not None}")
+            if existing_user:
+                logger.info(f"Found existing user: {existing_user['email']} (ID: {existing_user['_id']})")
+            else:
+                logger.info(f"No existing user found for email: {user_info.get('email')}")
             
             if existing_user:
                 # Update existing user
                 user_id = str(existing_user["_id"])
-                logger.info(f"Updating existing user with MongoDB ID: {user_id}")
+                logger.info(f"✅ Found existing user with MongoDB ID: {user_id}")
                 await db.users.update_one(
                     {"_id": existing_user["_id"]},
                     {
@@ -354,15 +364,17 @@ async def google_oauth_callback(code: str, scope: str):
                             "google_access_token": access_token,
                             "google_refresh_token": refresh_token,
                             "last_login": datetime.utcnow(),
-                            "updated_at": datetime.utcnow()
+                            "updated_at": datetime.utcnow(),
+                            "user_id": user_id  # ensure user_id field exists
                         }
                     }
                 )
-                logger.info(f"Updated existing user: {user_info.get('email')}")
+                logger.info(f"✅ Updated existing user: {user_info.get('email')}")
             else:
                 # Create new user
                 logger.info("Creating new user in database")
                 user_doc = {
+                    "user_id": str(ObjectId()),  # Unique user_id at creation
                     "email": user_info.get("email"),
                     "name": user_info.get("name"),
                     "picture": user_info.get("picture"),
@@ -378,13 +390,53 @@ async def google_oauth_callback(code: str, scope: str):
                 
                 result = await db.users.insert_one(user_doc)
                 user_id = str(result.inserted_id)
+                
+                # Update the user document to include user_id field
+                await db.users.update_one(
+                    {"_id": result.inserted_id},
+                    {"$set": {"user_id": user_id}}
+                )
+                
                 logger.info(f"Created new user: {user_info.get('email')} with MongoDB ID: {user_id}")
                 
         except Exception as db_error:
             logger.error(f"Database error during user creation/update: {db_error}")
-            # Continue without database - user_id will be Google ID
-            user_id = user_info.get("id")
-            logger.warning(f"Using Google ID as fallback user_id: {user_id}")
+            # Try to create user with proper ObjectId
+            try:
+                user_doc = {
+                    "user_id": str(ObjectId()),  # Unique user_id at creation
+                    "email": user_info.get("email"),
+                    "name": user_info.get("name"),
+                    "picture": user_info.get("picture"),
+                    "google_id": user_info.get("id"),
+                    "google_access_token": access_token,
+                    "google_refresh_token": refresh_token,
+                    "gmail_sync_status": "not_synced",
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                    "last_login": datetime.utcnow()
+                }
+                result = await db.users.insert_one(user_doc)
+                user_id = str(result.inserted_id)
+                
+                # Update the user document to include user_id field
+                await db.users.update_one(
+                    {"_id": result.inserted_id},
+                    {"$set": {"user_id": user_id}}
+                )
+                
+                logger.info(f"Created new user with proper ObjectId: {user_id}")
+            except Exception as retry_error:
+                logger.error(f"Retry user creation failed: {retry_error}")
+                # Try to find existing user by email
+                existing_user = await db.users.find_one({"email": user_info.get("email")})
+                if existing_user:
+                    user_id = str(existing_user["_id"])
+                    logger.info(f"Found existing user with ObjectId: {user_id}")
+                else:
+                    # Last resort - use Google ID but this will cause issues
+                    user_id = user_info.get("id")
+                    logger.warning(f"Using Google ID as fallback user_id: {user_id}")
             
         user_data = {
             "id": user_id,
