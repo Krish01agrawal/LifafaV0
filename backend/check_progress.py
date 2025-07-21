@@ -7,6 +7,10 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Add the backend directory to Python path
 backend_dir = Path(__file__).parent
@@ -22,7 +26,7 @@ async def check_progress():
         await DatabaseService.initialize()
         db = DatabaseService.get_database()
         
-        user_id = '687783628bc131c83fa8ae83'
+        user_id = '687d044dc299cd71eb509376'
         user = await db.users.find_one({'_id': ObjectId(user_id)})
         
         if user:

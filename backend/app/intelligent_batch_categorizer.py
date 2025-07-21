@@ -416,11 +416,19 @@ async def start_batch_categorization(user_id: str, limit: Optional[int] = None) 
 async def get_categorization_status(user_id: str) -> Dict[str, Any]:
     """Get categorization status for a user"""
     try:
+        # Use classification_status to determine progress instead of deprecated 'categorized' flag
         total_emails = await email_logs_collection.count_documents({"user_id": user_id})
+
         categorized_emails = await email_logs_collection.count_documents({
             "user_id": user_id,
-            "categorized": True
+            "classification_status": {"$in": ["classified", "extracted"]}
         })
+        # Fallback to old flag to preserve compatibility for legacy data
+        if categorized_emails == 0:
+            categorized_emails = await email_logs_collection.count_documents({
+                "user_id": user_id,
+                "categorized": True
+            })
         
         return {
             "user_id": user_id,

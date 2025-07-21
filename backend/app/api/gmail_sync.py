@@ -6,7 +6,7 @@ Endpoints for synchronizing Gmail data.
 """
 
 from fastapi import APIRouter, HTTPException, Request, BackgroundTasks
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 from datetime import datetime
 import requests
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.post("/start")
-async def start_gmail_sync(request: Request, background_tasks: BackgroundTasks):
+async def start_gmail_sync(request: Request, background_tasks: BackgroundTasks, limit: Optional[int] = 500, store_raw: bool = True):
     """Start Gmail synchronization for the current user."""
     try:
         logger.info("="*50)
@@ -58,7 +58,7 @@ async def start_gmail_sync(request: Request, background_tasks: BackgroundTasks):
         logger.info("Updated user sync status to 'syncing'")
         
         # Start background sync task
-        background_tasks.add_task(sync_gmail_emails, current_user["user_id"], google_access_token)
+        background_tasks.add_task(sync_gmail_emails, current_user["user_id"], google_access_token, limit, store_raw)
         
         logger.info("Background sync task started")
         logger.info("="*50)
@@ -105,7 +105,7 @@ async def get_sync_status(request: Request):
         logger.error(f"Error getting sync status: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get sync status: {str(e)}")
 
-async def sync_gmail_emails(user_id: str, access_token: str):
+async def sync_gmail_emails(user_id: str, access_token: str, limit: int = 500, store_raw: bool = True):
     """Background task to sync Gmail emails."""
     try:
         logger.info(f"Starting background Gmail sync for user: {user_id}")
@@ -125,7 +125,7 @@ async def sync_gmail_emails(user_id: str, access_token: str):
         date_query = six_months_ago.strftime("%Y/%m/%d")
         
         params = {
-            "maxResults": DefaultLimits.EMAIL_FETCH_LIMIT,
+            "maxResults": DefaultLimits.EMAIL_FETCH_LIMIT, # Fetch all messages for now, pagination will handle limit
             "q": f"after:{date_query}"  # Only get emails from last 6 months
         }
         
@@ -158,6 +158,9 @@ async def sync_gmail_emails(user_id: str, access_token: str):
             
             messages_data = response.json()
             messages = messages_data.get("messages", [])
+            if limit:
+                remaining = limit - total_fetched
+                messages = messages[:remaining]
             all_messages.extend(messages)
             total_fetched += len(messages)
             
@@ -167,12 +170,15 @@ async def sync_gmail_emails(user_id: str, access_token: str):
             page_token = messages_data.get("nextPageToken")
             if not page_token:
                 break
+            if limit and total_fetched >= limit:
+                logger.info("Reached fetch limit, stopping pagination")
+                break
         
         logger.info(f"Found {len(all_messages)} total Gmail messages across all pages")
         
         # Process each message (simplified - just store basic info)
         email_count = 0
-        for message in all_messages:
+        for message in all_messages[:limit]:
             try:
                 # Get message details
                 message_url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message['id']}"
@@ -189,8 +195,9 @@ async def sync_gmail_emails(user_id: str, access_token: str):
                         "snippet": msg_data.get('snippet', ''),
                         "received_date": datetime.utcnow(),  # Simplified
                         "processed_at": datetime.utcnow(),
-                        "raw_data": msg_data
                     }
+                    if store_raw:
+                        email_doc["raw_data"] = msg_data
                     
                     # Insert or update email
                     await db.email_logs.update_one(
@@ -269,20 +276,17 @@ async def sync_gmail_emails(user_id: str, access_token: str):
         logger.info("="*50)
         
     except Exception as e:
-        logger.error(f"Error in background Gmail sync: {e}")
-        
-        # Update user sync status to error
-        try:
-            db = DatabaseService.get_database()
+        logger.error(f"Critical error during Gmail sync: {e}")
+        await db.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"gmail_sync_status": "error", "sync_error": str(e), "updated_at": datetime.utcnow()}}
+        )
+    finally:
+        # Make sure status is no longer 'syncing' if task terminates
+        user = await db.users.find_one({"_id": ObjectId(user_id)})
+        if user and user.get("gmail_sync_status") == "syncing":
             await db.users.update_one(
                 {"_id": ObjectId(user_id)},
-                {
-                    "$set": {
-                        "gmail_sync_status": "error",
-                        "sync_error": str(e),
-                        "updated_at": datetime.utcnow()
-                    }
-                }
+                {"$set": {"gmail_sync_status": "synced", "last_synced": datetime.utcnow()}}
             )
-        except Exception as db_error:
-            logger.error(f"Error updating sync status: {db_error}") 
+        logger.info(f"Background Gmail sync task finished for {user_id}") 

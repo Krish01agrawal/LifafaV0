@@ -59,7 +59,21 @@ class DatabaseService:
                 logger.warning(f"⚠️ Failed to encode MongoDB URI: {encoding_error}")
                 # Continue with original URI
             
-            cls._client = AsyncIOMotorClient(mongodb_url)
+            # Add SSL configuration for macOS certificate issues
+            import certifi
+            import ssl
+            
+            # Create SSL context with proper certificate verification
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+            
+            # Create client with SSL configuration
+            cls._client = AsyncIOMotorClient(
+                mongodb_url,
+                tlsCAFile=certifi.where(),
+                tls=True,
+                tlsAllowInvalidCertificates=False,
+                tlsAllowInvalidHostnames=False
+            )
             cls._database = cls._client[settings.mongodb_database]
             
             # Test connection
@@ -106,8 +120,8 @@ class DatabaseService:
             # ============================================================================
             
             # Users collection indexes
-            await db.users.create_index([("user_id", ASCENDING)], unique=True)
             await db.users.create_index([("email", ASCENDING)], unique=True)
+            await db.users.create_index([("google_id", ASCENDING)])
             await db.users.create_index([("google_auth_token", ASCENDING)])
             await db.users.create_index([("last_sync_date", DESCENDING)])
             await db.users.create_index([("sync_status", ASCENDING)])

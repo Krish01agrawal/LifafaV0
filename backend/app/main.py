@@ -7,17 +7,29 @@ import logging
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
+import asyncio
+from contextlib import suppress
 
 from app.config.settings import settings
 from app.api import auth, sync, query, health
 from app.api.intelligent_email_system import router as intelligent_email_router
 from app.api.enhanced_processing import router as enhanced_processing_router
+from app.api.financial_analytics import router as financial_analytics_router
 from app.services.cache_service import InMemoryCache
 from app.services.database_service import DatabaseService
 from app.utils.middleware import RequestLoggingMiddleware, RateLimitMiddleware
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Background email processing worker
+from start_background_worker import BackgroundWorker
+
+# Global background worker instance (will be started in lifespan)
+background_worker: BackgroundWorker | None = None
+
+# Configure structured logging early
+from app.utils.logging_utils import configure_logging
+import logging
+
+configure_logging(level=settings.log_level)
 logger = logging.getLogger(__name__)
 
 # Global cache instance
@@ -30,6 +42,12 @@ async def lifespan(app: FastAPI):
     try:
         await DatabaseService.initialize()
         logger.info("Database connected successfully")
+
+        # Start background worker
+        global background_worker
+        background_worker = BackgroundWorker()
+        app.state.worker_task = asyncio.create_task(background_worker.start())
+        logger.info("Background email worker task started")
     except Exception as e:
         logger.warning(f"Database connection failed: {e}")
         logger.info("Application will run without database functionality")
@@ -41,6 +59,15 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Pluto Money application...")
     try:
         await DatabaseService.close()
+
+        # Stop background worker
+        if background_worker and background_worker.running:
+            background_worker.running = False
+            await background_worker.stop()
+        if hasattr(app.state, 'worker_task'):
+            app.state.worker_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await app.state.worker_task
     except Exception as e:
         logger.warning(f"Error closing database connection: {e}")
 
@@ -81,10 +108,15 @@ app.include_router(query.router, prefix="/query", tags=["Query"])
 app.include_router(health.router, prefix="/health", tags=["Health"])
 app.include_router(intelligent_email_router)
 app.include_router(enhanced_processing_router)
+app.include_router(financial_analytics_router)
 
 # Add Gmail sync router
 from app.api import gmail_sync
 app.include_router(gmail_sync.router, prefix="/gmail", tags=["Gmail Sync"])
+
+# Include WebSocket router for real-time chat and progress updates
+from app import websocket as websocket_module
+app.include_router(websocket_module.router, tags=["WebSocket"])
 
 # Add /logout endpoint at root level for frontend compatibility
 @app.post("/logout")
@@ -139,27 +171,56 @@ async def get_current_user_info(request: Request):
         user_id = current_user["user_id"]
         logger.info(f"Looking up user with ID: {user_id}")
         
-        # Check if user_id is a valid ObjectId
-        try:
-            object_id = ObjectId(user_id)
-            logger.info(f"Valid ObjectId created: {object_id}")
-        except Exception as oid_error:
-            logger.error(f"Invalid ObjectId '{user_id}': {oid_error}")
-            raise HTTPException(status_code=400, detail=f"Invalid user ID format: {user_id}")
+        # Try to find user by email first (more reliable)
+        user = None
+        email = current_user.get("email")
+        logger.info(f"Looking up user with email: {email}")
         
-        user = await db.users.find_one({"_id": object_id})
-        logger.info(f"User found in database: {user is not None}")
+        if email:
+            user = await db.users.find_one({"email": email})
+            if user:
+                logger.info(f"✅ Found user by email: {user['email']} (ID: {user['_id']})")
+                # Update the user_id in current_user for consistency
+                current_user["user_id"] = str(user["_id"])
+                logger.info(f"Updated user_id to ObjectId: {current_user['user_id']}")
+            else:
+                logger.warning(f"❌ User not found by email: {email}")
+        
+        # If not found by email, try by ObjectId as fallback
+        if not user:
+            try:
+                object_id = ObjectId(user_id)
+                logger.info(f"Trying ObjectId lookup: {object_id}")
+                user = await db.users.find_one({"_id": object_id})
+                if user:
+                    logger.info(f"✅ Found user by ObjectId: {user['_id']}")
+                else:
+                    logger.warning(f"❌ User not found by ObjectId: {object_id}")
+            except Exception as oid_error:
+                logger.warning(f"Invalid ObjectId '{user_id}': {oid_error}")
         
         if not user:
-            logger.warning(f"User not found in database with ID: {user_id}")
+            logger.error(f"❌ User not found in database with ID: {user_id}")
             raise HTTPException(status_code=404, detail="User not found")
+        
+        logger.info(f"✅ User lookup successful: {user['email']} (ID: {user['_id']})")
+        
+        # Determine if Gmail is synced based on status
+        gmail_sync_status = user.get("gmail_sync_status", "not_synced")
+        initial_gmailData_sync = gmail_sync_status in ["synced", "completed"]
+        
+        logger.info(f"🔍 Sync Status Analysis:")
+        logger.info(f"   - gmail_sync_status: {gmail_sync_status}")
+        logger.info(f"   - initial_gmailData_sync: {initial_gmailData_sync}")
+        logger.info(f"   - categorization_status: {user.get('categorization_status', 'not_started')}")
         
         response_data = {
             "user_id": str(user["_id"]),
             "email": user["email"],
             "name": user["name"],
             "picture": user.get("picture"),
-            "gmail_sync_status": user.get("gmail_sync_status", "not_synced"),
+            "gmail_sync_status": gmail_sync_status,
+            "initial_gmailData_sync": initial_gmailData_sync,  # Frontend expects this field
             "categorization_status": user.get("categorization_status", "not_started"),
             "last_synced": user.get("last_synced"),
             "email_count": user.get("email_count", 0),
@@ -181,8 +242,10 @@ async def get_current_user_info(request: Request):
                 google_access_token = user.get("google_access_token")
                 if google_access_token:
                     # Update sync status to 'syncing'
+                    # Ensure object_id variable exists
+                    obj_id = user.get("_id")
                     await db.users.update_one(
-                        {"_id": object_id},
+                        {"_id": obj_id},
                         {
                             "$set": {
                                 "gmail_sync_status": "syncing",

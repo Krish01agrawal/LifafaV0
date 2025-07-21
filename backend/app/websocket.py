@@ -5,7 +5,7 @@ import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from websockets.exceptions import ConnectionClosed
 from starlette.websockets import WebSocketState
-from .mem0_agent_agno import query_mem0
+from app.intelligent_query_processor import process_user_query
 from .auth import decode_jwt_token_websocket
 
 # Configure logging
@@ -302,6 +302,7 @@ async def handle_websocket_connection(websocket: WebSocket, provided_chat_id: st
             logger.info(f"🔐 {client_id} - Waiting for authentication message...")
             auth_data = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
             logger.info(f"🔐 {client_id} - Received auth data: {list(auth_data.keys()) if auth_data else 'None'}")
+            logger.info(f"🔐 {client_id} - Full auth data: {auth_data}")
             
             token = auth_data.get("jwt_token")
             
@@ -312,8 +313,13 @@ async def handle_websocket_connection(websocket: WebSocket, provided_chat_id: st
                 return
 
             logger.info(f"🔐 {client_id} - JWT token received, length: {len(token)} chars")
+            logger.info(f"🔐 {client_id} - JWT token first 50 chars: {token[:50]}...")
+            
             payload = decode_jwt_token_websocket(token)
             logger.info(f"🔐 {client_id} - JWT payload decoded: {payload is not None}")
+            if payload:
+                logger.info(f"🔐 {client_id} - JWT payload keys: {list(payload.keys())}")
+                logger.info(f"🔐 {client_id} - JWT user_id: {payload.get('user_id')}")
             
             if not payload or "user_id" not in payload:
                 logger.warning(f"❌ {client_id} - Invalid token or payload: {payload}")
@@ -379,9 +385,13 @@ async def handle_websocket_connection(websocket: WebSocket, provided_chat_id: st
                 
                 # Call the agent to get a response
                 try:
-                    logger.info(f"🔄 Calling query_mem0 for user {user_id}...")
-                    response = await query_mem0(user_id=user_id, query=message)
-                    logger.info(f"✅ query_mem0 completed. Response type: {type(response)}, Length: {len(str(response)) if response else 0}")
+                    # Use the elite query processor for world-class performance
+                    from .elite_query_processor import process_elite_query
+                    logger.info(f"🔄 Calling elite_query_processor for user {user_id}...")
+                    response_dict = await process_elite_query(user_id=user_id, query=message)
+                    response = response_dict.get("response", "I couldn't find an answer.")
+                    logger.info(f"✅ elite_query_processor completed. Keys: {list(response_dict.keys())}")
+                    logger.info(f"📊 Performance: {response_dict.get('total_items_analyzed', 0)} items, {response_dict.get('insights_generated', 0)} insights")
                     
                     # Prepare response message
                     response_message = {
@@ -396,7 +406,7 @@ async def handle_websocket_connection(websocket: WebSocket, provided_chat_id: st
                     logger.info(f"✅ Successfully sent response to user {user_id} in chat {chat_id}")
                     
                 except Exception as agent_error:
-                    logger.error(f"❌ Error in query_mem0 for user {user_id}: {agent_error}", exc_info=True)
+                    logger.error(f"❌ Error in elite_query_processor for user {user_id}: {agent_error}", exc_info=True)
                     await manager.send_json(client_id, {
                         "reply": ["I encountered an error while processing your request. Please try again."],
                         "chatId": chat_id,

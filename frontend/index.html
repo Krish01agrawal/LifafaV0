@@ -179,6 +179,7 @@
       <button id="syncButton" onclick="startGmailSync()" style="margin-left: 10px; background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">Start Sync</button>
     </div>
     <button onclick="logout()" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">Logout</button>
+    <button onclick="debugCurrentState()" style="background: #6c757d; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-left: 5px;">Debug</button>
   </div>
 
   <!-- Chat Section -->
@@ -266,7 +267,7 @@
       jwtToken = savedToken;
       currentUser = savedUser;
       showAuthenticatedState();
-      connectWebSocket();
+      // Don't connect WebSocket immediately - let checkGmailSyncStatus handle it
     }
   }
 
@@ -287,7 +288,7 @@
     localStorage.setItem('jwtToken', jwtToken);
     localStorage.setItem('currentUser', currentUser);
     
-    // Check Gmail sync status
+    // Check Gmail sync status immediately and enable chat if ready
     checkGmailSyncStatus();
   }
 
@@ -545,6 +546,18 @@
   }
 
   // ========== Gmail Sync Functions ==========
+  
+  // Debug function to check current state
+  function debugCurrentState() {
+    console.log("=== DEBUG CURRENT STATE ===");
+    console.log("JWT Token:", jwtToken ? "Present" : "Missing");
+    console.log("Current User:", currentUser);
+    console.log("WebSocket State:", ws ? ws.readyState : "Not connected");
+    console.log("Send Button Disabled:", document.getElementById('sendBtn')?.disabled);
+    console.log("Sync Status Text:", document.getElementById('syncStatusText')?.textContent);
+    console.log("========================");
+  }
+  
   async function checkGmailSyncStatus() {
     try {
       console.log("[Gmail Sync] Checking sync status...");
@@ -557,12 +570,36 @@
       
       if (response.ok) {
         const userData = await response.json();
+        console.log("[Gmail Sync] User data received:", userData);
         updateSyncStatusUI(userData);
+        debugCurrentState(); // Debug current state
+        
+        // If sync is completed, also check if we need to connect WebSocket
+        if (userData.gmail_sync_status === 'synced' || userData.gmail_sync_status === 'completed') {
+          if (!ws || ws.readyState !== WebSocket.OPEN) {
+            console.log("[Gmail Sync] Sync completed, connecting WebSocket for chat...");
+            connectWebSocket();
+          }
+          
+          // Fallback: Enable chat interface even if WebSocket fails
+          setTimeout(() => {
+            const sendBtn = document.getElementById('sendBtn');
+            if (sendBtn && sendBtn.disabled) {
+              console.log("[Gmail Sync] Fallback: Enabling chat interface after sync completion");
+              sendBtn.disabled = false;
+              showStatus('Gmail sync completed! You can now start chatting about your emails.', 'success');
+            }
+          }, 5000); // 5 second fallback
+        }
+        
+        return userData; // Return user data for interval checking
       } else {
         console.error("[Gmail Sync] Error checking sync status:", response.status);
+        return null;
       }
     } catch (error) {
       console.error("[Gmail Sync] Error checking sync status:", error);
+      return null;
     }
   }
 
@@ -595,11 +632,20 @@
         break;
         
       case 'synced':
+      case 'completed':
         syncStatusText.textContent = `Gmail Status: Synced (${emailCount} emails)`;
         syncStatusText.style.color = '#155724';
         syncButton.textContent = 'Re-sync';
         syncButton.disabled = false;
         syncButton.style.background = '#28a745';
+        
+        // Enable chat interface if sync is completed
+        const sendBtn = document.getElementById('sendBtn');
+        if (sendBtn && sendBtn.disabled) {
+          sendBtn.disabled = false;
+          console.log("[Gmail Sync] ✅ Chat interface enabled - sync completed");
+          showStatus('Gmail sync completed! You can now start chatting about your emails.', 'success');
+        }
         break;
         
       case 'error':
@@ -638,8 +684,17 @@
         // Update UI immediately
         updateSyncStatusUI({ gmail_sync_status: 'syncing', email_count: 0 });
         
-        // Start checking status
+        // Start checking status periodically
         setTimeout(checkGmailSyncStatus, 3000);
+        
+        // Set up periodic status checking every 5 seconds
+        const statusCheckInterval = setInterval(async () => {
+          const userData = await checkGmailSyncStatus();
+          if (userData && (userData.gmail_sync_status === 'synced' || userData.gmail_sync_status === 'completed')) {
+            clearInterval(statusCheckInterval);
+            console.log("[Gmail Sync] Status check interval cleared - sync completed");
+          }
+        }, 5000);
       } else {
         const error = await response.json();
         console.error("[Gmail Sync] Error starting sync:", error);

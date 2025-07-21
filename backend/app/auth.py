@@ -4,10 +4,12 @@ from google.auth.transport import requests
 from jose import JWTError, jwt
 from datetime import datetime, timedelta, timezone
 import os
+from app.config.settings import settings
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-JWT_SECRET = os.getenv("JWT_SECRET", "supersecretjwtkey")
-JWT_ALGORITHM = "HS256"
+# Use centralized secret/algorithm from settings to avoid mismatches across modules
+JWT_SECRET = settings.secret_key
+JWT_ALGORITHM = settings.algorithm
 JWT_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
 def verify_google_token(token: str):
@@ -47,5 +49,9 @@ def decode_jwt_token_websocket(token: str):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload
-    except JWTError:
+    except JWTError as e:
+        print(f"JWT decode error: {e}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error decoding JWT: {e}")
         return None
