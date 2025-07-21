@@ -36,8 +36,6 @@ share/python-wheels/
 MANIFEST
 
 # PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
 
@@ -92,33 +90,16 @@ profile_default/
 ipython_config.py
 
 # pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+.python-version
 
 # pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
+Pipfile.lock
 
 # poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
+poetry.lock
 
 # pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
-#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
-#   in version control.
-#   https://pdm.fming.dev/#use-with-ide
 .pdm.toml
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
 __pypackages__/
 
 # Celery stuff
@@ -142,6 +123,8 @@ venv.bak/
 /.env.local
 /.env.production
 /.env.staging
+/.env.development
+/.env.test
 
 # Spyder project settings
 .spyderproject
@@ -167,19 +150,6 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be added to the global gitignore or merged into this project gitignore.  For a PyCharm
-#  project, it is recommended to include the following files:
-#  - .idea/
-#  - *.iml
-#  - *.ipr
-#  - *.iws
-.idea/
-*.iml
-*.ipr
-*.iws
-
 # ============================================================================
 # NODE.JS (if any frontend components)
 # ============================================================================
@@ -192,7 +162,7 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 
-# Diagnostic reports (https://nodejs.org/api/report.html)
+# Diagnostic reports
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Runtime data
@@ -211,16 +181,16 @@ coverage
 # nyc test coverage
 .nyc_output
 
-# Grunt intermediate storage (https://gruntjs.com/creating-plugins#storing-task-files)
+# Grunt intermediate storage
 .grunt
 
-# Bower dependency directory (https://bower.io/)
+# Bower dependency directory
 bower_components
 
 # node-waf configuration
 .lock-wscript
 
-# Compiled binary addons (https://nodejs.org/api/addons.html)
+# Compiled binary addons
 build/Release
 
 # Dependency directories
@@ -263,7 +233,7 @@ typings/
 .env.test.local
 .env.production.local
 
-# parcel-bundler cache (https://parceljs.org/)
+# parcel-bundler cache
 .cache
 .parcel-cache
 
@@ -276,9 +246,6 @@ dist
 
 # Gatsby files
 .cache/
-# Comment in the public line in if your project uses Gatsby and not Next.js
-# https://nextjs.org/blog/next-9-1#public-directory-support
-# public
 
 # vuepress build output
 .vuepress/dist
@@ -314,6 +281,7 @@ dist
 Dockerfile.prod
 docker-compose.override.yml
 docker-compose.prod.yml
+docker-compose.dev.yml
 
 # ============================================================================
 # ENVIRONMENT & CONFIGURATION
@@ -369,6 +337,17 @@ dump.rdb
 logs/
 log/
 
+# Application specific logs
+pluto_money.log
+lifafa_v0.log
+app.log
+error.log
+access.log
+performance.log
+health_check.log
+system_health.json
+health_metrics.json
+
 # Temporary files
 *.tmp
 *.temp
@@ -379,6 +358,8 @@ tmp/
 # Cache directories
 .cache/
 cache/
+redis_cache/
+memory_cache/
 
 # ============================================================================
 # OPERATING SYSTEM
@@ -438,6 +419,12 @@ $RECYCLE.BIN/
 !.vscode/extensions.json
 *.code-workspace
 
+# PyCharm
+.idea/
+*.iml
+*.ipr
+*.iws
+
 # Vim
 *.swp
 *.swo
@@ -461,10 +448,10 @@ tramp
 .atom/
 
 # ============================================================================
-# PROJECT SPECIFIC
+# LIFAFAV0 PROJECT SPECIFIC
 # ============================================================================
 
-# Gmail Intelligence Platform specific
+# Data directories
 data/
 uploads/
 downloads/
@@ -476,31 +463,53 @@ financial_data/
 credit_reports/
 bank_statements/
 transaction_data/
+financial_transactions/
 
 # Browser automation
 browser_data/
 screenshots/
-downloads/
+browser_downloads/
+playwright_downloads/
 
-# AI/ML models
+# AI/ML models and data
 models/
 *.pkl
 *.joblib
 *.h5
 *.onnx
+model_cache/
+ai_cache/
 
 # Playwright
 test-results/
 playwright-report/
 playwright/.cache/
+playwright/.cache/
+playwright-browsers/
 
 # PDF processing
 pdf_cache/
 pdf_temp/
+pdf_uploads/
+statement_cache/
 
 # Email processing
 email_cache/
 email_temp/
+email_uploads/
+gmail_cache/
+
+# Gmail Intelligence specific
+gmail_data/
+email_analytics/
+email_categories/
+email_extractions/
+
+# Financial Intelligence specific
+financial_analytics/
+spending_patterns/
+transaction_history/
+credit_analytics/
 
 # ============================================================================
 # MONITORING & ANALYTICS
@@ -510,10 +519,14 @@ email_temp/
 monitoring/
 metrics/
 analytics/
+performance_data/
+benchmark_results/
+profiling_data/
 
 # Health check files
 health_check.log
 system_health.json
+health_metrics.json
 
 # ============================================================================
 # DEPLOYMENT
@@ -523,6 +536,7 @@ system_health.json
 deploy.sh
 deploy_production.sh
 deploy_staging.sh
+deploy_dev.sh
 
 # SSL certificates
 ssl/
@@ -533,6 +547,13 @@ ssl/
 # Nginx
 nginx.conf
 production_nginx.conf
+nginx/
+
+# Kubernetes
+k8s/
+kubernetes/
+*.yaml.bak
+*.yml.bak
 
 # ============================================================================
 # TESTING
@@ -543,10 +564,16 @@ test_data/
 test_files/
 test_emails/
 test_financial_data/
+test_credit_data/
 
 # Test reports
 test_reports/
 coverage_reports/
+test_results/
+
+# Playwright test results
+test-results/
+playwright-report/
 
 # ============================================================================
 # DOCUMENTATION
@@ -555,10 +582,12 @@ coverage_reports/
 # Generated documentation
 docs/_build/
 docs/build/
+docs/generated/
 
 # API documentation
 api_docs/
 swagger/
+openapi/
 
 # ============================================================================
 # BACKUP & RECOVERY
@@ -574,6 +603,11 @@ backups/
 # Recovery files
 *.recovery
 recovery/
+
+# Database backups
+db_backup/
+mongodb_backup/
+redis_backup/
 
 # ============================================================================
 # SECURITY
@@ -593,6 +627,12 @@ recovery/
 auth_tokens.json
 oauth_tokens.json
 session_data/
+jwt_tokens/
+
+# API credentials
+api_credentials/
+service_accounts/
+google_credentials/
 
 # ============================================================================
 # PERFORMANCE & OPTIMIZATION
@@ -602,10 +642,13 @@ session_data/
 performance_data/
 benchmark_results/
 profiling_data/
-
-# Optimization cache
 optimization_cache/
-model_cache/
+
+# Cache directories
+cache/
+.cache/
+redis_cache/
+memory_cache/
 
 # ============================================================================
 # MISC
@@ -649,6 +692,62 @@ model_cache/
 *.woff
 *.woff2
 *.eot
+
+# ============================================================================
+# LIFAFAV0 SPECIFIC EXCLUSIONS
+# ============================================================================
+
+# Gmail API credentials
+gmail_credentials.json
+google_oauth_credentials.json
+
+# OpenAI API keys
+openai_api_key.txt
+openai_credentials.json
+
+# Mem0 API credentials
+mem0_api_key.txt
+mem0_credentials.json
+
+# Credit Bureau API credentials
+cibil_credentials.json
+experian_credentials.json
+crif_credentials.json
+equifax_credentials.json
+
+# Financial institution credentials
+bank_credentials.json
+financial_api_keys.json
+
+# Browser automation data
+browser_profiles/
+user_data/
+browser_cache/
+
+# Email processing artifacts
+email_processing_cache/
+email_extraction_results/
+email_classification_cache/
+
+# Financial processing artifacts
+financial_processing_cache/
+transaction_extraction_cache/
+spending_analysis_cache/
+
+# AI/ML processing artifacts
+ai_processing_cache/
+ml_model_cache/
+embedding_cache/
+
+# WebSocket data
+websocket_cache/
+websocket_sessions/
+websocket_logs/
+
+# Real-time processing
+realtime_cache/
+streaming_data/
+live_analytics/
 
 # ============================================================================
 # END OF .gitignore
