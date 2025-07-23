@@ -44,8 +44,7 @@ from ..advanced_financial_extractor import (
 )
 from ..elite_query_processor import (
     process_elite_query as process_user_query,
-    get_query_suggestions,
-    EliteQueryProcessor
+    get_query_suggestions
 )
 from ..mongodb_optimizer import (
     optimize_database_indexes,

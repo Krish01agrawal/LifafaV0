@@ -113,6 +113,10 @@ app.include_router(financial_analytics_router)
 from app.api import gmail_sync
 app.include_router(gmail_sync.router, prefix="/gmail", tags=["Gmail Sync"])
 
+# Add SMS router
+from app.api import sms_api
+app.include_router(sms_api.router, prefix="/sms", tags=["SMS Management"])
+
 # Include WebSocket router for real-time chat and progress updates
 from app import websocket as websocket_module
 app.include_router(websocket_module.router, tags=["WebSocket"])

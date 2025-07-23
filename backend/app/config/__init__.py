@@ -200,7 +200,7 @@ LOCAL_MONGODB_URL = "mongodb://localhost:27017"
 
 # Shard databases - using cloud MongoDB cluster
 # Use the cloud MongoDB URI from environment variable
-SHARD_DATABASES = [os.getenv("MONGO_URI", LOCAL_MONGODB_URL)]
+SHARD_DATABASES = [_settings.mongodb_url]
 
 # Enable aggressive compression for free tier
 ENABLE_AGGRESSIVE_COMPRESSION = True
@@ -213,6 +213,10 @@ def get_database_for_user(user_id: str) -> str:
     """Get database for user (simple hash-based routing)"""
     if not ENABLE_DATABASE_SHARDING:
         return "pluto_money"  # Use cloud database name
+    
+    # For now, always use the main pluto_money database for cloud connections
+    if any("cluster0.swuj2.mongodb.net" in uri for uri in SHARD_DATABASES):
+        return "pluto_money"
     
     # Simple hash-based routing for multiple databases
     shard_index = hash(user_id) % len(SHARD_DATABASES)
