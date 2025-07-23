@@ -9,6 +9,10 @@ and validation. Settings are loaded from environment variables with defaults.
 from pydantic_settings import BaseSettings
 from typing import Optional
 import os
+from dotenv import load_dotenv
+
+# Load .env file explicitly
+load_dotenv()
 
 class Settings(BaseSettings):
     # Application
@@ -17,7 +21,7 @@ class Settings(BaseSettings):
     debug: bool = False
     
     # Database
-    mongodb_url: str = "mongodb://localhost:27017"
+    mongodb_url: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     mongodb_database: str = "pluto_money"
     
     # Authentication
@@ -74,6 +78,7 @@ class Settings(BaseSettings):
     
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
         case_sensitive = False
         extra = "ignore"  # Allow extra fields from environment
 

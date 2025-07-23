@@ -84,22 +84,38 @@ class DatabaseManager:
                 encoded_uri = self._encode_mongodb_uri(uri)
                 logger.info(f"🔄 Attempting to connect to database shard {i}: {encoded_uri[:50]}...")
                 
-                client = AsyncIOMotorClient(
-                    encoded_uri, 
-                    tlsCAFile=self.ca,
-                    maxPoolSize=DB_MAX_POOL_SIZE,
-                    minPoolSize=DB_MIN_POOL_SIZE,
-                    connectTimeoutMS=5000,  # Reduced timeout for faster fallback
-                    serverSelectionTimeoutMS=5000,  # Reduced timeout
-                    socketTimeoutMS=120000,
-                    retryWrites=True,
-                    w="majority"
-                )
+                # Check if this is a local connection (no SSL needed)
+                is_local_connection = "localhost" in encoded_uri or "127.0.0.1" in encoded_uri
+                
+                # Connection parameters
+                connection_params = {
+                    "maxPoolSize": DB_MAX_POOL_SIZE,
+                    "minPoolSize": DB_MIN_POOL_SIZE,
+                    "connectTimeoutMS": 5000,  # Reduced timeout for faster fallback
+                    "serverSelectionTimeoutMS": 5000,  # Reduced timeout
+                    "socketTimeoutMS": 120000,
+                    "retryWrites": True,
+                    "w": "majority"
+                }
+                
+                # Only add SSL for non-local connections
+                if not is_local_connection:
+                    connection_params["tlsCAFile"] = self.ca
+                    logger.info(f"🔐 Using SSL for cloud MongoDB connection")
+                else:
+                    logger.info(f"🏠 Using local MongoDB connection (no SSL)")
+                
+                client = AsyncIOMotorClient(encoded_uri, **connection_params)
                 
                 # Connection will be tested on first use
                 # No need to test here as it's not an async context
                 
-                db_name = f"pluto_money_shard_{i}"
+                # Use correct database name based on connection type
+                if "cluster0.swuj2.mongodb.net" in encoded_uri:
+                    db_name = "pluto_money"  # Use main database for cloud
+                else:
+                    db_name = f"pluto_money_shard_{i}"  # Use shard for local
+                
                 self.clients[i] = client
                 self.databases[i] = client[db_name]
                 
@@ -119,6 +135,7 @@ class DatabaseManager:
                             minPoolSize=1,
                             connectTimeoutMS=3000,
                             serverSelectionTimeoutMS=3000,
+                            # No SSL for local fallback
                         )
                         
                         db_name = f"pluto_money_local_shard_{i}"
