@@ -753,7 +753,13 @@ live_analytics/
 # END OF .gitignore
 # ============================================================================ 
 
+# Frontend folder
+frontend/
 
+# Extra folder
 extraa/
+
+# Virtual environment
+venv/
 
 
